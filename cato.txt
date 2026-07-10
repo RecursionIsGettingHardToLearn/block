@@ -1,0 +1,13 @@
+ Canal "evoting"
+  │                                                                                                                     
+  ├── peer0 → couchdb0 → base de datos "evoting_"                                                                       
+  │                         TALLY_eleccion-AAA: {cand1: 45, cand2: 32}
+  │                         VOTE_uuid-001: {electionId: AAA, ...}
+  │
+  ├── peer1 → couchdb1 → base de datos "evoting_"
+  │                         TALLY_eleccion-AAA: {cand1: 45, cand2: 32}  ← IGUAL
+  │                         VOTE_uuid-001: {electionId: AAA, ...}        ← IGUAL
+  │
+  └── peer2 → couchdb2 → base de datos "evoting_"
+                            TALLY_eleccion-AAA: {cand1: 45, cand2: 32}  ← IGUAL
+                            VOTE_uuid-001: {electionId: AAA, ...}        ← IGUAL
