@@ -48,10 +48,17 @@ export class FabricController {
     let voteId: string;
     let channel: string;
     try {
-      ({ txId, voteId, channel } = await this.fabricService.emitirVoto(userId, dto.electionId, dto.candidateId));
+      ({ txId, voteId, channel } = await this.fabricService.emitirVoto(
+        userId,
+        dto.electionId,
+        dto.candidateId,
+      ));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      if (err instanceof HttpException && err.getStatus() < HttpStatus.INTERNAL_SERVER_ERROR) {
+      if (
+        err instanceof HttpException &&
+        err.getStatus() < Number(HttpStatus.INTERNAL_SERVER_ERROR)
+      ) {
         throw err;
       }
 
@@ -66,7 +73,9 @@ export class FabricController {
         errorMessage,
         canal: channel,
       });
-      throw new BadGatewayException(`Fabric no pudo registrar el voto en CouchDB/ledger: ${errorMessage}`);
+      throw new BadGatewayException(
+        `Fabric no pudo registrar el voto en CouchDB/ledger: ${errorMessage}`,
+      );
     }
 
     await this.usersService.markAsVoted(userId, dto.electionId);
@@ -107,7 +116,8 @@ export class FabricController {
     if (localMatches?.length) return localMatches[localMatches.length - 1];
 
     const fabricTxMatches = decoded.match(/\b[0-9a-fA-F]{64}\b/g);
-    if (fabricTxMatches?.length) return fabricTxMatches[fabricTxMatches.length - 1];
+    if (fabricTxMatches?.length)
+      return fabricTxMatches[fabricTxMatches.length - 1];
 
     return decoded
       .replace(/^txId\s*[:=]\s*/i, '')

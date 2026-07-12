@@ -4,10 +4,28 @@ import api from '../../api/axios.config';
 import type { BlockchainSyncLog, Election } from '../../types';
 import { useElections } from '../../hooks/useElections';
 
-const STATUS_META: Record<BlockchainSyncLog['status'], { label: string; color: string; bg: string; Icon: React.ElementType }> = {
-  PENDING:   { label: 'Pendiente',  color: 'text-amber-600', bg: 'bg-amber-50', Icon: Clock },
-  CONFIRMED: { label: 'Confirmado', color: 'text-emerald-600', bg: 'bg-emerald-50', Icon: CheckCircle2 },
-  FAILED:    { label: 'Fallido',    color: 'text-red-600',   bg: 'bg-red-50',    Icon: XCircle },
+const STATUS_META: Record<
+  BlockchainSyncLog['status'],
+  { label: string; color: string; bg: string; Icon: React.ElementType }
+> = {
+  PENDING: {
+    label: 'Pendiente',
+    color: 'text-amber-600',
+    bg: 'bg-amber-50',
+    Icon: Clock,
+  },
+  CONFIRMED: {
+    label: 'Confirmado',
+    color: 'text-emerald-600',
+    bg: 'bg-emerald-50',
+    Icon: CheckCircle2,
+  },
+  FAILED: {
+    label: 'Fallido',
+    color: 'text-red-600',
+    bg: 'bg-red-50',
+    Icon: XCircle,
+  },
 };
 
 export default function AuditLogs() {
@@ -22,11 +40,16 @@ export default function AuditLogs() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    api.get<BlockchainSyncLog[]>('/audit/logs', { params: { electionId: electionFilter || undefined } })
+    api
+      .get<BlockchainSyncLog[]>('/audit/logs', {
+        params: { electionId: electionFilter || undefined },
+      })
       .then(({ data }) => setLogs(data))
       .catch((err) => {
         console.error('Error al cargar logs de auditoría:', err);
-        setError('No se pudo cargar el historial de auditoría. Verifica que el backend esté disponible.');
+        setError(
+          'No se pudo cargar el historial de auditoría. Verifica que el backend esté disponible.',
+        );
       })
       .finally(() => setLoading(false));
   }, [electionFilter]);
@@ -40,14 +63,21 @@ export default function AuditLogs() {
   return (
     <div className="flex flex-col gap-4 sm:gap-6 animate-slide-up">
       <div>
-        <h2 className="text-xl sm:text-2xl font-black text-slate-900">Auditoría Blockchain</h2>
-        <p className="text-sm text-slate-500 font-medium mt-1">Registro de transacciones en Hyperledger Fabric</p>
+        <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+          Auditoría Blockchain
+        </h2>
+        <p className="text-sm text-slate-500 font-medium mt-1">
+          Registro de transacciones en Hyperledger Fabric
+        </p>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
         <div className="relative flex-1 min-w-[200px]">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search
+            size={13}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          />
           <input
             className="w-full pl-8 pr-3 py-2 rounded-lg text-sm bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500"
             placeholder="Filtrar por txId…"
@@ -56,7 +86,10 @@ export default function AuditLogs() {
           />
         </div>
         <div className="relative">
-          <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Filter
+            size={13}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          />
           <select
             className="pl-8 pr-3 py-2 rounded-lg text-sm bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
             value={statusFilter}
@@ -76,7 +109,9 @@ export default function AuditLogs() {
           >
             <option value="">Todas las elecciones</option>
             {elections.map((e: Election) => (
-              <option key={e.id} value={e.id}>{e.title}</option>
+              <option key={e.id} value={e.id}>
+                {e.title}
+              </option>
             ))}
           </select>
         </div>
@@ -100,7 +135,10 @@ export default function AuditLogs() {
         </div>
       ) : error ? (
         <div className="text-center py-16 text-sm text-slate-500">
-          <p>Mostrando {filtered.length} registro{filtered.length !== 1 ? 's' : ''} en caché</p>
+          <p>
+            Mostrando {filtered.length} registro
+            {filtered.length !== 1 ? 's' : ''} en caché
+          </p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-sm text-slate-500">
@@ -128,7 +166,11 @@ export default function AuditLogs() {
                   return (
                     <tr
                       key={log.id}
-                      className={i < filtered.length - 1 ? 'border-b border-slate-100' : ''}
+                      className={
+                        i < filtered.length - 1
+                          ? 'border-b border-slate-100'
+                          : ''
+                      }
                     >
                       <td className="px-5 py-3">
                         <span
@@ -155,12 +197,18 @@ export default function AuditLogs() {
                           month: 'short',
                           year: 'numeric',
                           hour: '2-digit',
-                          minute: '2-digit'
+                          minute: '2-digit',
                         })}
                       </td>
                       <td className="px-5 py-3 text-xs font-mono max-w-[200px] truncate">
                         {log.errorMessage ? (
-                          <span className="text-red-600" title={log.errorMessage}>{log.errorMessage.slice(0, 50)}{log.errorMessage.length > 50 ? '…' : ''}</span>
+                          <span
+                            className="text-red-600"
+                            title={log.errorMessage}
+                          >
+                            {log.errorMessage.slice(0, 50)}
+                            {log.errorMessage.length > 50 ? '…' : ''}
+                          </span>
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}

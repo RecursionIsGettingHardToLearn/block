@@ -12,7 +12,12 @@ export default function Navbar() {
   }
 
   const initials = user?.name
-    ? user.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
+    ? user.name
+        .split(' ')
+        .map((w) => w[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase()
     : (user?.ru ?? '?').slice(0, 2).toUpperCase();
 
   return (

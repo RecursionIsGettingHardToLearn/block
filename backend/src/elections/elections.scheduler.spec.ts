@@ -34,7 +34,9 @@ describe('ElectionsScheduler', () => {
   });
 
   it('no lanza si el servicio falla (error aislado)', async () => {
-    mockElectionsService.closeExpiredElections.mockRejectedValue(new Error('DB caída'));
+    mockElectionsService.closeExpiredElections.mockRejectedValue(
+      new Error('DB caída'),
+    );
     await expect(scheduler.closeExpiredElections()).resolves.not.toThrow();
   });
 });

@@ -2,9 +2,11 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DatabaseService } from '../database/database.service';
 import { FabricService } from '../fabric/fabric.service';
-import { ElectionsService } from './elections.service';
+import { Election, ElectionsService } from './elections.service';
 
-const mockDb = { query: jest.fn() };
+const mockDb = {
+  query: jest.fn<Promise<{ rows: unknown[] }>, [string, unknown[]?]>(),
+};
 const mockFabric = { cerrarEleccion: jest.fn() };
 
 const electionRow = {
@@ -47,10 +49,12 @@ describe('ElectionsService', () => {
     });
 
     it('cierra cada elección vencida y retorna el conteo', async () => {
-      mockDb.query.mockResolvedValueOnce({ rows: [{ id: 'uuid-1' }, { id: 'uuid-2' }] });
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ id: 'uuid-1' }, { id: 'uuid-2' }],
+      });
       const spy = jest
         .spyOn(service, 'updateStatus')
-        .mockResolvedValue({} as any);
+        .mockResolvedValue({} as Election);
 
       const count = await service.closeExpiredElections();
 
@@ -61,11 +65,13 @@ describe('ElectionsService', () => {
     });
 
     it('continúa con las siguientes si una falla', async () => {
-      mockDb.query.mockResolvedValueOnce({ rows: [{ id: 'uuid-1' }, { id: 'uuid-2' }] });
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ id: 'uuid-1' }, { id: 'uuid-2' }],
+      });
       const spy = jest
         .spyOn(service, 'updateStatus')
         .mockRejectedValueOnce(new Error('Fabric offline'))
-        .mockResolvedValueOnce({} as any);
+        .mockResolvedValueOnce({} as Election);
 
       const count = await service.closeExpiredElections();
 
@@ -76,7 +82,7 @@ describe('ElectionsService', () => {
     it('solo busca elecciones en estado ACTIVA', async () => {
       mockDb.query.mockResolvedValueOnce({ rows: [] });
       await service.closeExpiredElections();
-      const sql: string = mockDb.query.mock.calls[0][0];
+      const [sql] = mockDb.query.mock.calls[0];
       expect(sql).toMatch(/estado\s*=\s*'ACTIVA'/);
       expect(sql).toMatch(/fecha_fin\s*<\s*NOW\(\)/);
     });
@@ -86,7 +92,9 @@ describe('ElectionsService', () => {
 
   describe('updateStatus', () => {
     it('rechaza transición inválida PROGRAMADA → CERRADA', async () => {
-      mockDb.query.mockResolvedValueOnce({ rows: [{ ...electionRow, estado: 'PROGRAMADA' }] });
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ ...electionRow, estado: 'PROGRAMADA' }],
+      });
       mockDb.query.mockResolvedValueOnce({ rows: [] }); // candidatos
 
       await expect(
@@ -96,13 +104,17 @@ describe('ElectionsService', () => {
 
     it('acepta transición válida ACTIVA → CERRADA', async () => {
       mockDb.query
-        .mockResolvedValueOnce({ rows: [electionRow] })        // findById
-        .mockResolvedValueOnce({ rows: [] })                   // candidatos findById
-        .mockResolvedValueOnce({ rows: [{ ...electionRow, estado: 'CERRADA' }] }) // update
-        .mockResolvedValueOnce({ rows: [] });                  // candidatos post-update
+        .mockResolvedValueOnce({ rows: [electionRow] }) // findById
+        .mockResolvedValueOnce({ rows: [] }) // candidatos findById
+        .mockResolvedValueOnce({
+          rows: [{ ...electionRow, estado: 'CERRADA' }],
+        }) // update
+        .mockResolvedValueOnce({ rows: [] }); // candidatos post-update
       mockFabric.cerrarEleccion.mockResolvedValue(undefined);
 
-      const result = await service.updateStatus('uuid-1', { status: 'CERRADA' });
+      const result = await service.updateStatus('uuid-1', {
+        status: 'CERRADA',
+      });
       expect(result.status).toBe('CERRADA');
     });
 
@@ -110,7 +122,9 @@ describe('ElectionsService', () => {
       mockDb.query
         .mockResolvedValueOnce({ rows: [electionRow] })
         .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ ...electionRow, estado: 'CERRADA' }] })
+        .mockResolvedValueOnce({
+          rows: [{ ...electionRow, estado: 'CERRADA' }],
+        })
         .mockResolvedValueOnce({ rows: [] });
       mockFabric.cerrarEleccion.mockResolvedValue(undefined);
 
@@ -122,7 +136,9 @@ describe('ElectionsService', () => {
       mockDb.query
         .mockResolvedValueOnce({ rows: [electionRow] })
         .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ ...electionRow, estado: 'CERRADA' }] })
+        .mockResolvedValueOnce({
+          rows: [{ ...electionRow, estado: 'CERRADA' }],
+        })
         .mockResolvedValueOnce({ rows: [] });
       mockFabric.cerrarEleccion.mockRejectedValue(new Error('Fabric offline'));
 

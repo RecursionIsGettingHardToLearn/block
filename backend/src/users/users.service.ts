@@ -128,7 +128,9 @@ export class UsersService implements OnModuleInit {
       [ORG_ID, dto.identificador, dto.email],
     );
     if (exists.rows.length > 0) {
-      throw new ConflictException('El identificador o email ya está registrado');
+      throw new ConflictException(
+        'El identificador o email ya está registrado',
+      );
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -139,7 +141,15 @@ export class UsersService implements OnModuleInit {
          (id_organizacion, identificador, nombre, email, hash_contrasena, rol, metadatos)
        VALUES ($1, $2, $3, $4, $5, $6::rol_usuario, $7::jsonb)
        RETURNING *`,
-      [ORG_ID, dto.identificador, dto.name, dto.email, passwordHash, dto.role, meta],
+      [
+        ORG_ID,
+        dto.identificador,
+        dto.name,
+        dto.email,
+        passwordHash,
+        dto.role,
+        meta,
+      ],
     );
     const user = mapUser(res.rows[0]);
     await this.replaceUserChannels(user.id, dto.channelNames ?? []);
@@ -179,7 +189,8 @@ export class UsersService implements OnModuleInit {
       params.push(await bcrypt.hash(dto.password, 10));
     }
 
-    if (setClauses.length === 0 && dto.channelNames === undefined) return current;
+    if (setClauses.length === 0 && dto.channelNames === undefined)
+      return current;
 
     if (setClauses.length > 0) {
       params.push(id);
@@ -199,7 +210,8 @@ export class UsersService implements OnModuleInit {
 
   async remove(id: string): Promise<void> {
     const res = await this.db.query('DELETE FROM usuarios WHERE id = $1', [id]);
-    if (res.rowCount === 0) throw new NotFoundException('Usuario no encontrado');
+    if (res.rowCount === 0)
+      throw new NotFoundException('Usuario no encontrado');
   }
 
   async assertCanVote(userId: string, electionId: string): Promise<void> {
@@ -208,7 +220,8 @@ export class UsersService implements OnModuleInit {
       [userId],
     );
     if (!userRes.rows[0]) throw new NotFoundException('Usuario no encontrado');
-    if (!userRes.rows[0].habilitado) throw new UnauthorizedException('Cuenta deshabilitada');
+    if (!userRes.rows[0].habilitado)
+      throw new UnauthorizedException('Cuenta deshabilitada');
 
     const channelRes = await this.db.query(
       `SELECT 1
@@ -219,7 +232,9 @@ export class UsersService implements OnModuleInit {
       [electionId, userId],
     );
     if (channelRes.rows.length === 0) {
-      throw new ForbiddenException('No tienes acceso al canal de esta elección');
+      throw new ForbiddenException(
+        'No tienes acceso al canal de esta elección',
+      );
     }
 
     const votoRes = await this.db.query(
@@ -227,7 +242,8 @@ export class UsersService implements OnModuleInit {
        WHERE id_usuario = $1 AND id_eleccion = $2 AND estado = 'CONFIRMADO'`,
       [userId, electionId],
     );
-    if (votoRes.rows.length > 0) throw new ConflictException('El usuario ya emitió su voto');
+    if (votoRes.rows.length > 0)
+      throw new ConflictException('El usuario ya emitió su voto');
   }
 
   async markAsVoted(userId: string, electionId: string): Promise<void> {
@@ -236,15 +252,18 @@ export class UsersService implements OnModuleInit {
         'SELECT habilitado FROM usuarios WHERE id = $1 FOR UPDATE',
         [userId],
       );
-      if (!userRes.rows[0]) throw new NotFoundException('Usuario no encontrado');
-      if (!userRes.rows[0].habilitado) throw new UnauthorizedException('Cuenta deshabilitada');
+      if (!userRes.rows[0])
+        throw new NotFoundException('Usuario no encontrado');
+      if (!userRes.rows[0].habilitado)
+        throw new UnauthorizedException('Cuenta deshabilitada');
 
       const votoRes = await client.query(
         `SELECT id FROM recibos_voto
          WHERE id_usuario = $1 AND id_eleccion = $2 AND estado = 'CONFIRMADO'`,
         [userId, electionId],
       );
-      if (votoRes.rows.length > 0) throw new ConflictException('El usuario ya emitió su voto');
+      if (votoRes.rows.length > 0)
+        throw new ConflictException('El usuario ya emitió su voto');
 
       await client.query(
         `INSERT INTO padron_electoral (id_eleccion, id_usuario, voto_emitido, votado_en)
@@ -267,12 +286,17 @@ export class UsersService implements OnModuleInit {
     `);
   }
 
-  private async replaceUserChannels(userId: string, channelNames: string[]): Promise<void> {
+  private async replaceUserChannels(
+    userId: string,
+    channelNames: string[],
+  ): Promise<void> {
     await this.ensureUserChannelsTable();
     const uniqueChannels = [...new Set(channelNames.filter(Boolean))];
 
     await this.db.transaction(async (client) => {
-      await client.query('DELETE FROM usuario_canales WHERE id_usuario = $1', [userId]);
+      await client.query('DELETE FROM usuario_canales WHERE id_usuario = $1', [
+        userId,
+      ]);
       for (const channelName of uniqueChannels) {
         await client.query(
           `INSERT INTO usuario_canales (id_usuario, canal_fabric)

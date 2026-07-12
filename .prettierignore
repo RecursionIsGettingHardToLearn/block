@@ -1,0 +1,8 @@
+# Código generado o dependencias: no se formatean ni se les exige estilo.
+node_modules/
+dist/
+build/
+coverage/
+package-lock.json
+fabric/network/crypto-material/
+chaincode/dist/

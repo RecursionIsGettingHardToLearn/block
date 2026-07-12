@@ -1,4 +1,10 @@
-import { Context, Contract, Info, Returns, Transaction } from 'fabric-contract-api';
+import {
+  Context,
+  Contract,
+  Info,
+  Returns,
+  Transaction,
+} from 'fabric-contract-api';
 import { ElectionState } from './models/election-state.model';
 import { TallyAsset } from './models/tally.model';
 import { VoteAsset } from './models/vote.model';
@@ -7,6 +13,17 @@ import { VoteAsset } from './models/vote.model';
 const voteKey = (voteId: string) => `vote:${voteId}`;
 const tallyKey = (electionId: string) => `tally:${electionId}`;
 const electionKey = (electionId: string) => `election:${electionId}`;
+
+/**
+ * Deserializa un asset guardado en el ledger.
+ *
+ * `JSON.parse` devuelve `any`; asignarlo directamente a una variable tipada
+ * anula el chequeo de tipos sin avisar. Al concentrar la conversión aquí, el
+ * cast queda en un único lugar, explícito y auditable.
+ */
+function parseAsset<T>(bytes: Uint8Array): T {
+  return JSON.parse(bytes.toString()) as T;
+}
 
 @Info({ title: 'FicctVoting', description: 'FICCT e-voting smart contract' })
 export class VotingContract extends Contract {
@@ -42,7 +59,10 @@ export class VotingContract extends Contract {
     };
 
     await ctx.stub.putState(key, Buffer.from(JSON.stringify(state)));
-    await ctx.stub.putState(tallyKey(electionId), Buffer.from(JSON.stringify(tally)));
+    await ctx.stub.putState(
+      tallyKey(electionId),
+      Buffer.from(JSON.stringify(tally)),
+    );
   }
 
   // ── emitirVoto ──────────────────────────────────────────────────────────────
@@ -62,21 +82,25 @@ export class VotingContract extends Contract {
     if (!elecBytes || elecBytes.length === 0) {
       throw new Error(`Elección ${electionId} no encontrada en el ledger`);
     }
-    const elecState: ElectionState = JSON.parse(elecBytes.toString());
+    const elecState = parseAsset<ElectionState>(elecBytes);
     if (elecState.status !== 'ACTIVA') {
-      throw new Error(`La elección ${electionId} no está activa (estado: ${elecState.status})`);
+      throw new Error(
+        `La elección ${electionId} no está activa (estado: ${elecState.status})`,
+      );
     }
 
     // 2. Prevent duplicate voteId
     const voteBytes = await ctx.stub.getState(voteKey(voteId));
     if (voteBytes && voteBytes.length > 0) {
-      throw new Error(`voteId ${voteId} ya existe en el ledger — voto duplicado`);
+      throw new Error(
+        `voteId ${voteId} ya existe en el ledger — voto duplicado`,
+      );
     }
 
     const txId = ctx.stub.getTxID();
     const ts = ctx.stub.getTxTimestamp();
     const timestamp = new Date(
-      (ts.seconds.toNumber() * 1000) + Math.floor(ts.nanos / 1e6),
+      ts.seconds.toNumber() * 1000 + Math.floor(ts.nanos / 1e6),
     ).toISOString();
 
     //Paso 3 — Persiste el voto (línea 83–91)
@@ -145,14 +169,14 @@ export class VotingContract extends Contract {
       throw new Error(`Elección ${electionId} no encontrada en el ledger`);
     }
 
-    const state: ElectionState = JSON.parse(bytes.toString());
+    const state = parseAsset<ElectionState>(bytes);
     if (state.status === 'CERRADA') {
       throw new Error(`La elección ${electionId} ya está cerrada`);
     }
 
     const ts = ctx.stub.getTxTimestamp();
     const closedAt = new Date(
-      (ts.seconds.toNumber() * 1000) + Math.floor(ts.nanos / 1e6),
+      ts.seconds.toNumber() * 1000 + Math.floor(ts.nanos / 1e6),
     ).toISOString();
 
     state.status = 'CERRADA';
@@ -163,9 +187,12 @@ export class VotingContract extends Contract {
     // Stamp the tally with the final close time
     const tallyBytes = await ctx.stub.getState(tallyKey(electionId));
     if (tallyBytes && tallyBytes.length > 0) {
-      const tally: TallyAsset = JSON.parse(tallyBytes.toString());
+      const tally = parseAsset<TallyAsset>(tallyBytes);
       tally.lastUpdated = closedAt;
-      await ctx.stub.putState(tallyKey(electionId), Buffer.from(JSON.stringify(tally)));
+      await ctx.stub.putState(
+        tallyKey(electionId),
+        Buffer.from(JSON.stringify(tally)),
+      );
     }
 
     return JSON.stringify({ electionId, closedAt, status: 'CERRADA' });
@@ -191,7 +218,7 @@ export class VotingContract extends Contract {
         lastUpdated: timestamp,
       };
     } else {
-      tally = JSON.parse(bytes.toString());
+      tally = parseAsset<TallyAsset>(bytes);
     }
 
     tally.results[candidateId] = (tally.results[candidateId] ?? 0) + 1;
@@ -199,5 +226,4 @@ export class VotingContract extends Contract {
 
     await ctx.stub.putState(key, Buffer.from(JSON.stringify(tally)));
   }
-
 }

@@ -1,20 +1,29 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { exec } from 'child_process';
 import { promises as fsp } from 'node:fs';
 import * as path from 'path';
 import { promisify } from 'util';
+import { getExecErrorDetail } from '../common/errors';
 import { DatabaseService } from '../database/database.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
 
 const execAsync = promisify(exec);
 
-const ORDERER_CA = '/crypto/ordererOrganizations/ficct.edu.bo/orderers/orderer.ficct.edu.bo/msp/tlscacerts/tlsca.ficct.edu.bo-cert.pem';
-const ADMIN_MSP  = '/crypto/peerOrganizations/ficct.edu.bo/users/Admin@ficct.edu.bo/msp';
-const CC_NAME    = 'evoting-cc';
+const ORDERER_CA =
+  '/crypto/ordererOrganizations/ficct.edu.bo/orderers/orderer.ficct.edu.bo/msp/tlscacerts/tlsca.ficct.edu.bo-cert.pem';
+const ADMIN_MSP =
+  '/crypto/peerOrganizations/ficct.edu.bo/users/Admin@ficct.edu.bo/msp';
+const CC_NAME = 'evoting-cc';
 const CC_VERSION = '1.0';
-const CC_SEQ     = '1';
-const CRYPTO_BASE = process.env.FABRIC_CRYPTO_PATH
-  ?? path.resolve(__dirname, '../../../fabric/network/crypto-material');
+const CC_SEQ = '1';
+const CRYPTO_BASE =
+  process.env.FABRIC_CRYPTO_PATH ??
+  path.resolve(__dirname, '../../../fabric/network/crypto-material');
 
 export interface FabricChannel {
   id: string;
@@ -32,20 +41,31 @@ interface FabricNodeRow {
   activo: boolean;
 }
 
+/** Fila de `canales_fabric` tal como la devuelve Postgres (snake_case). */
+interface FabricChannelRow {
+  id: string;
+  nombre: string;
+  descripcion: string | null;
+  activo: boolean;
+  creado_en: Date;
+}
+
 @Injectable()
 export class ChannelsService {
   constructor(private readonly db: DatabaseService) {}
 
   async findAll(): Promise<FabricChannel[]> {
-    const { rows } = await this.db.query<any>(
+    const { rows } = await this.db.query<FabricChannelRow>(
       `SELECT id, nombre, descripcion, activo, creado_en
        FROM canales_fabric
        ORDER BY creado_en ASC`,
     );
-    return rows.map(this.map);
+    return rows.map((row) => this.map(row));
   }
 
-  async createChannel(dto: CreateChannelDto): Promise<{ channel: FabricChannel; logs: string }> {
+  async createChannel(
+    dto: CreateChannelDto,
+  ): Promise<{ channel: FabricChannel; logs: string }> {
     const channelName = dto.nombre;
 
     if (!/^[a-z][a-z0-9-]{2,48}$/.test(channelName)) {
@@ -54,16 +74,22 @@ export class ChannelsService {
       );
     }
 
-    const configtxSrc = path.resolve(__dirname, '../../../fabric/network/configtx.yaml');
+    const configtxSrc = path.resolve(
+      __dirname,
+      '../../../fabric/network/configtx.yaml',
+    );
     const logs: string[] = [];
     const log = (msg: string) => logs.push(msg);
 
     const run = this.createRunner(log);
 
-    const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
     // 1. Copy configtx.yaml into CLI container
-    await run(`docker cp "${configtxSrc}" cli:/tmp/configtx.yaml`, 'Copiando configtx.yaml al CLI');
+    await run(
+      `docker cp "${configtxSrc}" cli:/tmp/configtx.yaml`,
+      'Copiando configtx.yaml al CLI',
+    );
 
     // 2. Generate channel transaction inside CLI
     await run(
@@ -100,13 +126,15 @@ export class ChannelsService {
       );
     }
 
-    log('[INFO] Esperando que los peers inicialicen el ledger del canal (10s)...');
+    log(
+      '[INFO] Esperando que los peers inicialicen el ledger del canal (10s)...',
+    );
     await sleep(10000);
 
     await this.deployChaincodeToChannel(channelName, log, joinedNodes);
 
     // 9. Persist to DB
-    const { rows } = await this.db.query<any>(
+    const { rows } = await this.db.query<FabricChannelRow>(
       `INSERT INTO canales_fabric (nombre, descripcion)
        VALUES ($1, $2)
        ON CONFLICT (nombre) DO UPDATE SET activo = true
@@ -122,12 +150,18 @@ export class ChannelsService {
     };
   }
 
-  async joinPeer(channelName: string, nodeId: string): Promise<{ logs: string }> {
+  async joinPeer(
+    channelName: string,
+    nodeId: string,
+  ): Promise<{ logs: string }> {
     await this.assertChannelExists(channelName);
     const logs: string[] = [];
     const log = (msg: string) => logs.push(msg);
     const node = await this.getNodeById(nodeId);
-    if (!node.activo) throw new BadRequestException('El peer debe estar activo para unirlo al canal');
+    if (!node.activo)
+      throw new BadRequestException(
+        'El peer debe estar activo para unirlo al canal',
+      );
 
     await this.ensureChannelBlock(channelName, log);
     await this.joinPeerToChannel(channelName, node, log);
@@ -142,26 +176,40 @@ export class ChannelsService {
   }
 
   private createRunner(log: (msg: string) => void) {
-    return async (cmd: string, label: string, optional = false): Promise<string> => {
+    return async (
+      cmd: string,
+      label: string,
+      optional = false,
+    ): Promise<string> => {
       log(`[RUN] ${label}`);
       try {
         const { stdout, stderr } = await execAsync(cmd, { timeout: 120_000 });
         if (stdout.trim()) log(stdout.trim());
         if (stderr.trim()) log(`[stderr] ${stderr.trim()}`);
         return stdout;
-      } catch (err: any) {
-        const detail = `${err.message ?? ''}\n${err.stderr ?? ''}`.trim();
-        const alreadyDone = /already exists|already successfully joined|chaincode definition.*exists|committed with|already defined|existing channel|currently at version/i.test(detail);
-        log(`[${optional || alreadyDone ? 'WARN' : 'ERROR'}] ${label}: ${detail}`);
-        if (!optional && !alreadyDone) throw new InternalServerErrorException(`${label} falló: ${detail}`);
+      } catch (err: unknown) {
+        const detail = getExecErrorDetail(err);
+        const alreadyDone =
+          /already exists|already successfully joined|chaincode definition.*exists|committed with|already defined|existing channel|currently at version/i.test(
+            detail,
+          );
+        log(
+          `[${optional || alreadyDone ? 'WARN' : 'ERROR'}] ${label}: ${detail}`,
+        );
+        if (!optional && !alreadyDone)
+          throw new InternalServerErrorException(`${label} falló: ${detail}`);
         return '';
       }
     };
   }
 
   private async assertChannelExists(channelName: string): Promise<void> {
-    const { rows } = await this.db.query(`SELECT id FROM canales_fabric WHERE nombre = $1`, [channelName]);
-    if (rows.length === 0) throw new NotFoundException(`Canal ${channelName} no registrado`);
+    const { rows } = await this.db.query(
+      `SELECT id FROM canales_fabric WHERE nombre = $1`,
+      [channelName],
+    );
+    if (rows.length === 0)
+      throw new NotFoundException(`Canal ${channelName} no registrado`);
   }
 
   private async getActiveNodes(): Promise<FabricNodeRow[]> {
@@ -192,7 +240,10 @@ export class ChannelsService {
     return `/crypto/peerOrganizations/ficct.edu.bo/peers/${node.host_alias}/tls/ca.crt`;
   }
 
-  private async ensureChannelBlock(channelName: string, log: (msg: string) => void): Promise<void> {
+  private async ensureChannelBlock(
+    channelName: string,
+    log: (msg: string) => void,
+  ): Promise<void> {
     const run = this.createRunner(log);
     await run(
       `docker exec cli peer channel fetch 0 /channel-artifacts/${channelName}.block -o orderer.ficct.edu.bo:7050 -c ${channelName} --tls --cafile ${ORDERER_CA}`,
@@ -201,7 +252,11 @@ export class ChannelsService {
     );
   }
 
-  private async joinPeerToChannel(channelName: string, node: FabricNodeRow, log: (msg: string) => void): Promise<void> {
+  private async joinPeerToChannel(
+    channelName: string,
+    node: FabricNodeRow,
+    log: (msg: string) => void,
+  ): Promise<void> {
     const run = this.createRunner(log);
     await this.assertPeerCryptoReady(node);
     await this.assertPeerReachable(node, log);
@@ -217,16 +272,20 @@ export class ChannelsService {
     candidateNodes?: FabricNodeRow[],
   ): Promise<void> {
     const run = this.createRunner(log);
-    const allNodes = candidateNodes ?? await this.getCryptoReadyActiveNodes(log);
+    const allNodes =
+      candidateNodes ?? (await this.getCryptoReadyActiveNodes(log));
     if (allNodes.length === 0) {
-      throw new BadRequestException('No hay peers activos con certificados TLS para desplegar chaincode');
+      throw new BadRequestException(
+        'No hay peers activos con certificados TLS para desplegar chaincode',
+      );
     }
 
-    const peerEnv = (node: FabricNodeRow) => [
-      `-e "CORE_PEER_ADDRESS=${this.peerAddress(node)}"`,
-      `-e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}"`,
-      `-e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}"`,
-    ].join(' ');
+    const peerEnv = (node: FabricNodeRow) =>
+      [
+        `-e "CORE_PEER_ADDRESS=${this.peerAddress(node)}"`,
+        `-e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}"`,
+        `-e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}"`,
+      ].join(' ');
 
     // Filtrar peers que no estén en el canal (puede ser timing o join fallido)
     const activeNodes: FabricNodeRow[] = [];
@@ -239,9 +298,13 @@ export class ChannelsService {
       if (channelList.includes(channelName)) {
         activeNodes.push(node);
       } else if (channelList === '') {
-        log(`[WARN] ${node.nombre} (${this.peerAddress(node)}) no alcanzable — omitido`);
+        log(
+          `[WARN] ${node.nombre} (${this.peerAddress(node)}) no alcanzable — omitido`,
+        );
       } else {
-        log(`[WARN] ${node.nombre} no está en canal ${channelName} (canales: ${channelList.replace(/\n/g, ', ').trim()}) — omitido`);
+        log(
+          `[WARN] ${node.nombre} no está en canal ${channelName} (canales: ${channelList.replace(/\n/g, ', ').trim()}) — omitido`,
+        );
       }
     }
     if (activeNodes.length === 0) {
@@ -280,10 +343,14 @@ export class ChannelsService {
       `docker exec ${peerEnv(first)} cli peer lifecycle chaincode queryinstalled`,
       'Buscando Package ID',
     );
-    const line = queryOut.split('\n').find(l => l.includes(`${CC_NAME}_${CC_VERSION}`));
+    const line = queryOut
+      .split('\n')
+      .find((l) => l.includes(`${CC_NAME}_${CC_VERSION}`));
     const packageId = line?.match(/Package ID: ([^,\s]+)/)?.[1]?.trim();
     if (!packageId) {
-      throw new InternalServerErrorException(`No se encontró Package ID de ${CC_NAME}_${CC_VERSION}`);
+      throw new InternalServerErrorException(
+        `No se encontró Package ID de ${CC_NAME}_${CC_VERSION}`,
+      );
     }
 
     await run(
@@ -297,17 +364,19 @@ export class ChannelsService {
     );
   }
 
-  private map(r: any): FabricChannel {
+  private map(r: FabricChannelRow): FabricChannel {
     return {
-      id:          r.id,
-      nombre:      r.nombre,
+      id: r.id,
+      nombre: r.nombre,
       descripcion: r.descripcion ?? null,
-      activo:      r.activo,
-      creadoEn:    r.creado_en,
+      activo: r.activo,
+      creadoEn: r.creado_en,
     };
   }
 
-  private async getCryptoReadyActiveNodes(log?: (msg: string) => void): Promise<FabricNodeRow[]> {
+  private async getCryptoReadyActiveNodes(
+    log?: (msg: string) => void,
+  ): Promise<FabricNodeRow[]> {
     const nodes = await this.getActiveNodes();
     const ready: FabricNodeRow[] = [];
 
@@ -315,7 +384,9 @@ export class ChannelsService {
       if (await this.hasPeerCrypto(node)) {
         ready.push(node);
       } else {
-        log?.(`[WARN] ${node.nombre} omitido: no existe ${this.peerTlsPath(node)} en crypto-material`);
+        log?.(
+          `[WARN] ${node.nombre} omitido: no existe ${this.peerTlsPath(node)} en crypto-material`,
+        );
       }
     }
 
@@ -350,7 +421,10 @@ export class ChannelsService {
     );
   }
 
-  private async assertPeerReachable(node: FabricNodeRow, log: (msg: string) => void): Promise<void> {
+  private async assertPeerReachable(
+    node: FabricNodeRow,
+    log: (msg: string) => void,
+  ): Promise<void> {
     const run = this.createRunner(log);
     try {
       await run(
@@ -369,11 +443,19 @@ export class ChannelsService {
   }
 
   private errorMessage(err: unknown): string {
-    if (err instanceof BadRequestException || err instanceof InternalServerErrorException || err instanceof NotFoundException) {
+    if (
+      err instanceof BadRequestException ||
+      err instanceof InternalServerErrorException ||
+      err instanceof NotFoundException
+    ) {
       const response = err.getResponse();
       if (typeof response === 'string') return response;
-      if (typeof response === 'object' && response !== null && 'message' in response) {
-        const message = (response as { message: unknown }).message;
+      if (
+        typeof response === 'object' &&
+        response !== null &&
+        'message' in response
+      ) {
+        const message = response.message;
         return Array.isArray(message) ? message.join(', ') : String(message);
       }
     }

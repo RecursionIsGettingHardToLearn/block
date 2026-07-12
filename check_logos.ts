@@ -13,7 +13,9 @@ async function checkLogos() {
     await client.connect();
 
     console.log('=== ELECCIONES EXISTENTES ===');
-    const eleccionesRes = await client.query('SELECT id, titulo, estado FROM elecciones');
+    const eleccionesRes = await client.query(
+      'SELECT id, titulo, estado FROM elecciones',
+    );
     console.table(eleccionesRes.rows);
 
     console.log('\n=== CANDIDATOS Y LOGOS ===');
@@ -24,14 +26,17 @@ async function checkLogos() {
       ORDER BY e.titulo, c.nombre_frente
     `);
     console.log(`Total candidatos: ${res.rowCount}`);
-    console.table(res.rows.map(r => ({
-      eleccion: r.eleccion,
-      frente: r.nombre_frente,
-      candidato: r.nombre_candidato,
-      tiene_logo: r.logo_frente ? '✅ (' + r.logo_frente.substring(0, 50) + '...)' : '❌',
-      tiene_foto: r.url_foto ? '✅' : '❌'
-    })));
-
+    console.table(
+      res.rows.map((r) => ({
+        eleccion: r.eleccion,
+        frente: r.nombre_frente,
+        candidato: r.nombre_candidato,
+        tiene_logo: r.logo_frente
+          ? '✅ (' + r.logo_frente.substring(0, 50) + '...)'
+          : '❌',
+        tiene_foto: r.url_foto ? '✅' : '❌',
+      })),
+    );
   } catch (err) {
     console.error(err);
   } finally {

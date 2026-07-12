@@ -11,7 +11,7 @@ async function debug() {
 
   try {
     await client.connect();
-    
+
     console.log('=== VOTOS EN RECEIBOS_VOTO ===');
     const res1 = await client.query(`
       SELECT id_usuario, id_eleccion, id_candidato, tipo_voto_especial, estado, creado_en 

@@ -20,9 +20,9 @@ import ProtectedRoute from './ProtectedRoute';
 
 /** Redirige al home según el rol del usuario autenticado */
 function RootRedirect() {
-  const isAdmin   = useAuthStore((s) => s.isAdmin());
+  const isAdmin = useAuthStore((s) => s.isAdmin());
   const isAuditor = useAuthStore((s) => s.isAuditor());
-  if (isAdmin)   return <Navigate to="/admin/dashboard" replace />;
+  if (isAdmin) return <Navigate to="/admin/dashboard" replace />;
   if (isAuditor) return <Navigate to="/auditor/resultados" replace />;
   return <Navigate to="/votante/votar" replace />;
 }
@@ -31,7 +31,6 @@ export default function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-
         {/* ── Público ───────────────────────────────────────────────────── */}
         <Route path="/login" element={<Login />} />
         <Route path="/elecciones" element={<PublicLayout />}>
@@ -58,14 +57,14 @@ export default function AppRouter() {
           }
         >
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="dashboard"  element={<Dashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
           <Route path="elecciones" element={<ElectionManager />} />
-          <Route path="usuarios"   element={<UsersPage />} />
-          <Route path="auditoria"  element={<AuditLogs />} />
+          <Route path="usuarios" element={<UsersPage />} />
+          <Route path="auditoria" element={<AuditLogs />} />
           <Route path="resultados" element={<AdminResults />} />
-          <Route path="nodos"    element={<NodesPage />} />
-          <Route path="canales"  element={<ChannelsPage />} />
-          <Route path="ca"       element={<CAPage />} />
+          <Route path="nodos" element={<NodesPage />} />
+          <Route path="canales" element={<ChannelsPage />} />
+          <Route path="ca" element={<CAPage />} />
         </Route>
 
         {/* ── VOTANTE ───────────────────────────────────────────────────── */}
@@ -78,7 +77,7 @@ export default function AppRouter() {
           }
         >
           <Route index element={<Navigate to="/votante/votar" replace />} />
-          <Route path="votar"      element={<VotingPage />} />
+          <Route path="votar" element={<VotingPage />} />
           <Route path="resultados" element={<LiveResults />} />
         </Route>
 
@@ -91,7 +90,10 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/auditor/resultados" replace />} />
+          <Route
+            index
+            element={<Navigate to="/auditor/resultados" replace />}
+          />
           <Route path="resultados" element={<AuditorDashboard />} />
           <Route path="validar" element={<VoteValidator />} />
           <Route path="blockchain" element={<AuditLogs />} />
@@ -99,13 +101,55 @@ export default function AppRouter() {
 
         {/* URLs antiguas → redirigen al equivalente nuevo */}
         {/* URLs antiguas → redirigen al equivalente nuevo bajo protección */}
-        <Route path="/dashboard"  element={<ProtectedRoute roles={['ADMIN']}><Navigate to="/admin/dashboard"  replace /></ProtectedRoute>} />
-        <Route path="/elections"  element={<ProtectedRoute roles={['ADMIN']}><Navigate to="/admin/elecciones" replace /></ProtectedRoute>} />
-        <Route path="/users"      element={<ProtectedRoute roles={['ADMIN']}><Navigate to="/admin/usuarios"   replace /></ProtectedRoute>} />
-        <Route path="/audit"      element={<ProtectedRoute roles={['ADMIN']}><Navigate to="/admin/auditoria"  replace /></ProtectedRoute>} />
-        
-        <Route path="/vote"       element={<ProtectedRoute roles={['VOTANTE']}><Navigate to="/votante/votar"      replace /></ProtectedRoute>} />
-        <Route path="/results"    element={<ProtectedRoute roles={['VOTANTE']}><Navigate to="/votante/resultados" replace /></ProtectedRoute>} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute roles={['ADMIN']}>
+              <Navigate to="/admin/dashboard" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/elections"
+          element={
+            <ProtectedRoute roles={['ADMIN']}>
+              <Navigate to="/admin/elecciones" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            <ProtectedRoute roles={['ADMIN']}>
+              <Navigate to="/admin/usuarios" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/audit"
+          element={
+            <ProtectedRoute roles={['ADMIN']}>
+              <Navigate to="/admin/auditoria" replace />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/vote"
+          element={
+            <ProtectedRoute roles={['VOTANTE']}>
+              <Navigate to="/votante/votar" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/results"
+          element={
+            <ProtectedRoute roles={['VOTANTE']}>
+              <Navigate to="/votante/resultados" replace />
+            </ProtectedRoute>
+          }
+        />
 
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

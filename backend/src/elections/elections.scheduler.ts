@@ -13,10 +13,14 @@ export class ElectionsScheduler {
     try {
       const count = await this.electionsService.closeExpiredElections();
       if (count > 0) {
-        this.logger.log(`Auto-cierre: ${count} elección(es) cerrada(s) por vencimiento`);
+        this.logger.log(
+          `Auto-cierre: ${count} elección(es) cerrada(s) por vencimiento`,
+        );
       }
     } catch (err) {
-      this.logger.error(`Error en cierre automático: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(
+        `Error en cierre automático: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 }
