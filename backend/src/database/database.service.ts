@@ -9,16 +9,18 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly config: ConfigService) {}
 
   onModuleInit(): void {
+    // Los servicios gestionados de Postgres (entre ellos Azure Database for
+    // PostgreSQL) exigen TLS y rechazan la conexión sin él. En una instancia
+    // local no hace falta, de modo que se decide por entorno.
+    const useSsl = this.config.get('DB_SSL', 'false') === 'true';
+
     this.pool = new Pool({
       host: this.config.getOrThrow('DB_HOST'),
       port: this.config.get<number>('DB_PORT', 5432),
       user: this.config.getOrThrow('DB_USER'),
       password: this.config.getOrThrow('DB_PASSWORD'),
       database: this.config.getOrThrow('DB_NAME'),
-      ssl:
-        this.config.get('DB_SSL') === 'true'
-          ? { rejectUnauthorized: false }
-          : undefined,
+      ssl: useSsl ? { rejectUnauthorized: false } : undefined,
     });
   }
 

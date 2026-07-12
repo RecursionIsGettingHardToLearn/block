@@ -20,6 +20,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
+import { CRYPTO_BASE } from '../common/fabric-paths';
 
 export type SyncStatus = 'PENDIENTE' | 'CONFIRMADO' | 'FALLIDO';
 
@@ -64,9 +65,6 @@ const PEER_HOST_ALIAS =
 const MSP_ID = process.env.FABRIC_MSP_ID ?? 'FICCTOrgMSP';
 const CHANNEL_NAME = process.env.FABRIC_CHANNEL ?? 'evoting';
 const CHAINCODE_NAME = process.env.FABRIC_CHAINCODE ?? 'evoting-cc';
-const CRYPTO_BASE =
-  process.env.FABRIC_CRYPTO_PATH ??
-  path.resolve(__dirname, '../../../../fabric/network/crypto-material');
 
 /** Fila del sondeo de nodos activos usado para decidir a qué peer conectarse. */
 interface ActiveNodeRow {

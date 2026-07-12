@@ -11,6 +11,7 @@ import { promisify } from 'util';
 import { getExecErrorDetail } from '../common/errors';
 import { DatabaseService } from '../database/database.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
+import { CONFIGTX_PATH, CRYPTO_BASE } from '../common/fabric-paths';
 
 const execAsync = promisify(exec);
 
@@ -21,9 +22,6 @@ const ADMIN_MSP =
 const CC_NAME = 'evoting-cc';
 const CC_VERSION = '1.0';
 const CC_SEQ = '1';
-const CRYPTO_BASE =
-  process.env.FABRIC_CRYPTO_PATH ??
-  path.resolve(__dirname, '../../../fabric/network/crypto-material');
 
 export interface FabricChannel {
   id: string;
@@ -74,10 +72,7 @@ export class ChannelsService {
       );
     }
 
-    const configtxSrc = path.resolve(
-      __dirname,
-      '../../../fabric/network/configtx.yaml',
-    );
+    const configtxSrc = CONFIGTX_PATH;
     const logs: string[] = [];
     const log = (msg: string) => logs.push(msg);
 

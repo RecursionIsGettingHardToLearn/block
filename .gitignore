@@ -13,3 +13,6 @@ node_modules/
 claude.md
 .claude/
 supa.cre
+
+# Entorno local del frontend (usar .env.example como plantilla)
+frontend/.env

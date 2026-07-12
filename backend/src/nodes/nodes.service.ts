@@ -13,12 +13,9 @@ import { getExecErrorDetail, getExecErrorSummary } from '../common/errors';
 import { DatabaseService } from '../database/database.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { DeployNodeDto } from './dto/deploy-node.dto';
+import { CRYPTO_BASE } from '../common/fabric-paths';
 
 const execAsync = promisify(exec);
-
-const CRYPTO_BASE =
-  process.env.FABRIC_CRYPTO_PATH ??
-  path.resolve(__dirname, '../../../fabric/network/crypto-material');
 
 async function getDockerAllocatedPorts(): Promise<number[]> {
   try {

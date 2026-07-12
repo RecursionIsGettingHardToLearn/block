@@ -10,16 +10,9 @@ import * as https from 'node:https';
 import * as path from 'node:path';
 import { getCaErrorMessage, getErrorMessage } from '../common/errors';
 import { RegisterIdentityDto } from './dto/register-identity.dto';
+import { CA_TLS_CERT, CRYPTO_BASE } from '../common/fabric-paths';
 
 const CA_URL = process.env.FABRIC_CA_URL ?? 'https://localhost:7054';
-const CRYPTO_BASE =
-  process.env.FABRIC_CRYPTO_PATH ??
-  path.resolve(__dirname, '../../../../fabric/network/crypto-material');
-
-const CA_TLS_CERT = path.resolve(
-  __dirname,
-  '../../../../fabric/network/fabric-ca/ficct/tls-cert.pem',
-);
 
 const ADMIN_CERT_DIR = path.join(
   CRYPTO_BASE,

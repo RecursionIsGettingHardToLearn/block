@@ -1,0 +1,63 @@
+name: Desplegar en Azure
+
+# Despliega en la maquina virtual de Azure. Solo corre si CI paso: nunca se
+# despliega codigo que no cumple los estandares.
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:      # permite lanzarlo a mano desde la pestana Actions
+
+concurrency:
+  # Evita que dos despliegues se pisen sobre la misma maquina.
+  group: despliegue-produccion
+  cancel-in-progress: false
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    # En el disparo automatico, solo si CI termino en verde.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Desplegar por SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          # La red Fabric puede tardar en responder; no cortar antes de tiempo.
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd /opt/block
+
+            echo "==> Trayendo los cambios"
+            git fetch --all
+            git reset --hard origin/main
+
+            echo "==> Backend"
+            npm ci --prefix backend
+            npm run build --prefix backend
+            sudo systemctl restart block-backend
+
+            echo "==> Frontend"
+            npm ci --prefix frontend
+            npm run build --prefix frontend   # .env.production => VITE_API_URL=/api
+            sudo systemctl reload caddy
+
+            echo "==> Comprobando que el backend responde"
+            sleep 5
+            sudo systemctl is-active --quiet block-backend \
+              || { sudo journalctl -u block-backend -n 40 --no-pager; exit 1; }
+
+            echo "Despliegue completado."
+
+  # La red Fabric NO se reinicia en cada despliegue: los contenedores guardan
+  # el ledger. Volver a levantarla implicaria regenerar el material
+  # criptografico y perder los votos ya emitidos. Se hace a mano y solo cuando
+  # se quiere partir de cero:
+  #     ssh <vm> 'cd /opt/block && bash fabric/network/scripts/setup.sh'

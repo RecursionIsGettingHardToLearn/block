@@ -1,0 +1,28 @@
+# Proxy inverso con certificado TLS automático (Let's Encrypt).
+#
+# La aplicación y la API comparten origen: el navegador nunca hace una petición
+# entre dominios. Eso elimina de raíz dos problemas clásicos del despliegue:
+# los errores de CORS y el bloqueo por contenido mixto (una página servida por
+# https que intenta llamar a una API por http).
+
+__DOMAIN__ {
+	encode gzip
+
+	# /api/* -> backend. `handle_path` quita el prefijo, de modo que el
+	# backend recibe /auth/login y no /api/auth/login: no hace falta tocar
+	# las rutas de NestJS.
+	handle_path /api/* {
+		reverse_proxy localhost:3000
+	}
+
+	# Todo lo demás -> frontend estático.
+	handle {
+		root * __APP_DIR__/frontend/dist
+		try_files {path} /index.html   # rutas del enrutador de React
+		file_server
+	}
+
+	log {
+		output file /var/log/caddy/block.log
+	}
+}

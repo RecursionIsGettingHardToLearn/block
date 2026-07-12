@@ -15,6 +15,16 @@ const fabric_contract_api_1 = require("fabric-contract-api");
 const voteKey = (voteId) => `vote:${voteId}`;
 const tallyKey = (electionId) => `tally:${electionId}`;
 const electionKey = (electionId) => `election:${electionId}`;
+/**
+ * Deserializa un asset guardado en el ledger.
+ *
+ * `JSON.parse` devuelve `any`; asignarlo directamente a una variable tipada
+ * anula el chequeo de tipos sin avisar. Al concentrar la conversión aquí, el
+ * cast queda en un único lugar, explícito y auditable.
+ */
+function parseAsset(bytes) {
+    return JSON.parse(bytes.toString());
+}
 let VotingContract = class VotingContract extends fabric_contract_api_1.Contract {
     constructor() {
         super('FicctVoting');
@@ -52,7 +62,7 @@ let VotingContract = class VotingContract extends fabric_contract_api_1.Contract
         if (!elecBytes || elecBytes.length === 0) {
             throw new Error(`Elección ${electionId} no encontrada en el ledger`);
         }
-        const elecState = JSON.parse(elecBytes.toString());
+        const elecState = parseAsset(elecBytes);
         if (elecState.status !== 'ACTIVA') {
             throw new Error(`La elección ${electionId} no está activa (estado: ${elecState.status})`);
         }
@@ -63,7 +73,7 @@ let VotingContract = class VotingContract extends fabric_contract_api_1.Contract
         }
         const txId = ctx.stub.getTxID();
         const ts = ctx.stub.getTxTimestamp();
-        const timestamp = new Date((ts.seconds.toNumber() * 1000) + Math.floor(ts.nanos / 1e6)).toISOString();
+        const timestamp = new Date(ts.seconds.toNumber() * 1000 + Math.floor(ts.nanos / 1e6)).toISOString();
         //Paso 3 — Persiste el voto (línea 83–91)
         const vote = {
             assetType: 'vote',
@@ -113,19 +123,19 @@ let VotingContract = class VotingContract extends fabric_contract_api_1.Contract
         if (!bytes || bytes.length === 0) {
             throw new Error(`Elección ${electionId} no encontrada en el ledger`);
         }
-        const state = JSON.parse(bytes.toString());
+        const state = parseAsset(bytes);
         if (state.status === 'CERRADA') {
             throw new Error(`La elección ${electionId} ya está cerrada`);
         }
         const ts = ctx.stub.getTxTimestamp();
-        const closedAt = new Date((ts.seconds.toNumber() * 1000) + Math.floor(ts.nanos / 1e6)).toISOString();
+        const closedAt = new Date(ts.seconds.toNumber() * 1000 + Math.floor(ts.nanos / 1e6)).toISOString();
         state.status = 'CERRADA';
         state.closedAt = closedAt;
         await ctx.stub.putState(key, Buffer.from(JSON.stringify(state)));
         // Stamp the tally with the final close time
         const tallyBytes = await ctx.stub.getState(tallyKey(electionId));
         if (tallyBytes && tallyBytes.length > 0) {
-            const tally = JSON.parse(tallyBytes.toString());
+            const tally = parseAsset(tallyBytes);
             tally.lastUpdated = closedAt;
             await ctx.stub.putState(tallyKey(electionId), Buffer.from(JSON.stringify(tally)));
         }
@@ -145,7 +155,7 @@ let VotingContract = class VotingContract extends fabric_contract_api_1.Contract
             };
         }
         else {
-            tally = JSON.parse(bytes.toString());
+            tally = parseAsset(bytes);
         }
         tally.results[candidateId] = (tally.results[candidateId] ?? 0) + 1;
         tally.lastUpdated = timestamp;
