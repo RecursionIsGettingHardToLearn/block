@@ -147,6 +147,11 @@ log "Levantando la red Hyperledger Fabric (tarda varios minutos)"
 chmod +x fabric/network/scripts/*.sh
 sg docker -c "bash fabric/network/scripts/setup.sh"
 
+# cryptogen corre dentro de Docker como root, así que el material queda
+# ilegible para el usuario del servicio; sin esto el backend arranca en
+# modo offline con EACCES sobre la clave del Admin.
+sudo chown -R "$USER_NAME:$USER_NAME" fabric/network/crypto-material
+
 # ─── 9. Backend ─────────────────────────────────────────────────────────────
 log "Compilando el backend"
 npm ci --prefix backend
