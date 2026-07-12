@@ -15,6 +15,10 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       user: this.config.getOrThrow('DB_USER'),
       password: this.config.getOrThrow('DB_PASSWORD'),
       database: this.config.getOrThrow('DB_NAME'),
+      ssl:
+        this.config.get('DB_SSL') === 'true'
+          ? { rejectUnauthorized: false }
+          : undefined,
     });
   }
 
