@@ -1,5 +1,11 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { AuthenticatedUser } from './jwt.strategy';
 
 export const ROLES_KEY = 'roles';
 
@@ -13,8 +19,10 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
     if (!required) return true;
-    const { user } = context.switchToHttp().getRequest();
-    if (!required.includes(user?.role)) {
+    const { user } = context
+      .switchToHttp()
+      .getRequest<{ user?: AuthenticatedUser }>();
+    if (!user || !required.includes(user.role)) {
       throw new ForbiddenException('No tienes permisos para esta acción');
     }
     return true;

@@ -1,48 +1,63 @@
-import { Vote, CheckCircle2, Clock, BarChart2, FileEdit, TrendingUp } from 'lucide-react';
+import {
+  Vote,
+  CheckCircle2,
+  Clock,
+  BarChart2,
+  FileEdit,
+  TrendingUp,
+} from 'lucide-react';
 import { useElections } from '../../hooks/useElections';
 import StatusBadge from '../../components/common/StatusBadge';
 import type { ElectionStatus } from '../../types';
 
-const STATUSES: ElectionStatus[] = ['PROGRAMADA', 'ACTIVA', 'CERRADA', 'ESCRUTADA'];
+const STATUSES: ElectionStatus[] = [
+  'PROGRAMADA',
+  'ACTIVA',
+  'CERRADA',
+  'ESCRUTADA',
+];
 
-const statMeta: Record<ElectionStatus, { Icon: React.ElementType; color: string; bg: string; gradient: string }> = {
-  PROGRAMADA: { 
-    Icon: Clock, 
-    color: 'text-blue-600', 
+const statMeta: Record<
+  ElectionStatus,
+  { Icon: React.ElementType; color: string; bg: string; gradient: string }
+> = {
+  PROGRAMADA: {
+    Icon: Clock,
+    color: 'text-blue-600',
     bg: 'bg-blue-50',
-    gradient: 'from-blue-500 to-blue-600'
+    gradient: 'from-blue-500 to-blue-600',
   },
-  ACTIVA: { 
-    Icon: Vote, 
-    color: 'text-emerald-600', 
+  ACTIVA: {
+    Icon: Vote,
+    color: 'text-emerald-600',
     bg: 'bg-emerald-50',
-    gradient: 'from-emerald-500 to-emerald-600'
+    gradient: 'from-emerald-500 to-emerald-600',
   },
-  CERRADA: { 
-    Icon: CheckCircle2, 
-    color: 'text-amber-600', 
+  CERRADA: {
+    Icon: CheckCircle2,
+    color: 'text-amber-600',
     bg: 'bg-amber-50',
-    gradient: 'from-amber-500 to-amber-600'
+    gradient: 'from-amber-500 to-amber-600',
   },
-  ESCRUTADA: { 
-    Icon: BarChart2, 
-    color: 'text-violet-600', 
+  ESCRUTADA: {
+    Icon: BarChart2,
+    color: 'text-violet-600',
     bg: 'bg-violet-50',
-    gradient: 'from-violet-500 to-violet-600'
+    gradient: 'from-violet-500 to-violet-600',
   },
-  BORRADOR: { 
-    Icon: FileEdit, 
-    color: 'text-slate-600', 
+  BORRADOR: {
+    Icon: FileEdit,
+    color: 'text-slate-600',
     bg: 'bg-slate-50',
-    gradient: 'from-slate-500 to-slate-600'
+    gradient: 'from-slate-500 to-slate-600',
   },
 };
 
 const STATUS_LABEL: Record<ElectionStatus, string> = {
-  BORRADOR: 'Borrador', 
-  PROGRAMADA: 'Programadas', 
+  BORRADOR: 'Borrador',
+  PROGRAMADA: 'Programadas',
   ACTIVA: 'Activas',
-  CERRADA: 'Cerradas', 
+  CERRADA: 'Cerradas',
   ESCRUTADA: 'Escrutadas',
 };
 
@@ -56,14 +71,15 @@ export default function Dashboard() {
 
   const totalElections = elections.length;
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="relative">
-        <div className="absolute inset-0 bg-indigo-500/20 blur-xl rounded-full" />
-        <div className="w-10 h-10 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
+  if (loading)
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="relative">
+          <div className="absolute inset-0 bg-indigo-500/20 blur-xl rounded-full" />
+          <div className="w-10 h-10 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
+        </div>
       </div>
-    </div>
-  );
+    );
 
   return (
     <div className="flex flex-col gap-6 sm:gap-8 animate-slide-up">
@@ -95,25 +111,29 @@ export default function Dashboard() {
         {STATUSES.map((s) => {
           const { Icon, color, bg, gradient } = statMeta[s];
           const count = counts[s] || 0;
-          
+
           return (
             <div
               key={s}
               className="group relative bg-white rounded-2xl p-6 flex flex-col gap-4 border border-slate-200 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden"
             >
               {/* Background Gradient Accent */}
-              <div className={`absolute -right-8 -top-8 w-24 h-24 bg-gradient-to-br ${gradient} opacity-10 rounded-full blur-2xl group-hover:opacity-20 transition-opacity`} />
-              
+              <div
+                className={`absolute -right-8 -top-8 w-24 h-24 bg-gradient-to-br ${gradient} opacity-10 rounded-full blur-2xl group-hover:opacity-20 transition-opacity`}
+              />
+
               {/* Icon & Count */}
               <div className="flex items-center justify-between relative z-10">
                 <span className="text-xs font-bold text-slate-600">
                   {STATUS_LABEL[s]}
                 </span>
-                <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center`}>
+                <div
+                  className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center`}
+                >
                   <Icon size={18} className={color} strokeWidth={2.5} />
                 </div>
               </div>
-              
+
               <div className="relative z-10">
                 <span className="text-4xl font-black text-slate-900 tracking-tighter">
                   {count}
@@ -122,11 +142,11 @@ export default function Dashboard() {
                   elecciones
                 </span>
               </div>
-              
+
               {/* Progress Bar Visual */}
               {totalElections > 0 && (
                 <div className="relative z-10 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className={`h-full bg-gradient-to-r ${gradient} rounded-full transition-all duration-500`}
                     style={{ width: `${(count / totalElections) * 100}%` }}
                   />
@@ -168,7 +188,11 @@ export default function Dashboard() {
                 <tr>
                   <td colSpan={4} className="text-center px-4 sm:px-6 py-12">
                     <div className="flex flex-col items-center gap-3">
-                      <FileEdit size={32} className="text-slate-300" strokeWidth={1} />
+                      <FileEdit
+                        size={32}
+                        className="text-slate-300"
+                        strokeWidth={1}
+                      />
                       <span className="text-sm text-slate-500 font-medium">
                         No hay elecciones registradas
                       </span>
@@ -194,7 +218,7 @@ export default function Dashboard() {
                       {new Date(e.startDate).toLocaleDateString('es-ES', {
                         day: '2-digit',
                         month: 'short',
-                        year: 'numeric'
+                        year: 'numeric',
                       })}
                     </span>
                   </td>
@@ -203,7 +227,7 @@ export default function Dashboard() {
                       {new Date(e.endDate).toLocaleDateString('es-ES', {
                         day: '2-digit',
                         month: 'short',
-                        year: 'numeric'
+                        year: 'numeric',
                       })}
                     </span>
                   </td>

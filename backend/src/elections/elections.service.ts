@@ -11,14 +11,19 @@ import { CreateCandidateDto } from './dto/create-candidate.dto';
 import { CreateElectionDto } from './dto/create-election.dto';
 import { UpdateElectionStatusDto } from './dto/update-election-status.dto';
 
-export type ElectionStatus = 'BORRADOR' | 'PROGRAMADA' | 'ACTIVA' | 'CERRADA' | 'ESCRUTADA';
+export type ElectionStatus =
+  | 'BORRADOR'
+  | 'PROGRAMADA'
+  | 'ACTIVA'
+  | 'CERRADA'
+  | 'ESCRUTADA';
 
 const VALID_TRANSITIONS: Record<ElectionStatus, ElectionStatus[]> = {
-  BORRADOR:   ['PROGRAMADA'],
+  BORRADOR: ['PROGRAMADA'],
   PROGRAMADA: ['ACTIVA'],
-  ACTIVA:     ['CERRADA'],
-  CERRADA:    ['ESCRUTADA'],
-  ESCRUTADA:  [],
+  ACTIVA: ['CERRADA'],
+  CERRADA: ['ESCRUTADA'],
+  ESCRUTADA: [],
 };
 
 // Default org from seed data
@@ -62,7 +67,10 @@ function mapCandidate(row: Record<string, unknown>): Candidate {
   };
 }
 
-function mapElection(row: Record<string, unknown>, candidates: Candidate[] = []): Election {
+function mapElection(
+  row: Record<string, unknown>,
+  candidates: Candidate[] = [],
+): Election {
   return {
     id: row.id as string,
     title: row.titulo as string,
@@ -93,7 +101,14 @@ export class ElectionsService {
       `INSERT INTO elecciones (id_organizacion, titulo, descripcion, fecha_inicio, fecha_fin, estado, canal_fabric)
        VALUES ($1, $2, $3, $4, $5, 'PROGRAMADA', $6)
        RETURNING *`,
-      [ORG_ID, dto.title, dto.description ?? null, dto.startDate, dto.endDate, channel],
+      [
+        ORG_ID,
+        dto.title,
+        dto.description ?? null,
+        dto.startDate,
+        dto.endDate,
+        channel,
+      ],
     );
     return mapElection(res.rows[0]);
   }
@@ -170,7 +185,8 @@ export class ElectionsService {
       'SELECT * FROM elecciones WHERE id = $1',
       [id],
     );
-    if (!electRes.rows[0]) throw new NotFoundException(`Elección ${id} no encontrada`);
+    if (!electRes.rows[0])
+      throw new NotFoundException(`Elección ${id} no encontrada`);
 
     const candRes = await this.db.query<Record<string, unknown>>(
       `SELECT * FROM candidatos WHERE id_eleccion = $1 ORDER BY orden_boleta ASC, creado_en ASC`,
@@ -179,7 +195,10 @@ export class ElectionsService {
     return mapElection(electRes.rows[0], candRes.rows.map(mapCandidate));
   }
 
-  async updateStatus(id: string, dto: UpdateElectionStatusDto): Promise<Election> {
+  async updateStatus(
+    id: string,
+    dto: UpdateElectionStatusDto,
+  ): Promise<Election> {
     const election = await this.findElectionById(id);
     const allowed = VALID_TRANSITIONS[election.status];
 
@@ -229,7 +248,9 @@ export class ElectionsService {
   async deleteElection(id: string): Promise<void> {
     const election = await this.findElectionById(id);
     if (election.status !== 'PROGRAMADA') {
-      throw new BadRequestException('Solo se pueden eliminar elecciones en estado PROGRAMADA');
+      throw new BadRequestException(
+        'Solo se pueden eliminar elecciones en estado PROGRAMADA',
+      );
     }
     await this.db.query('DELETE FROM elecciones WHERE id = $1', [id]);
   }
@@ -241,9 +262,13 @@ export class ElectionsService {
     for (const { id } of rows) {
       try {
         await this.updateStatus(id, { status: 'CERRADA' });
-        this.logger.log(`Auto-cierre: elección ${id} cerrada por vencimiento de plazo`);
+        this.logger.log(
+          `Auto-cierre: elección ${id} cerrada por vencimiento de plazo`,
+        );
       } catch (err) {
-        this.logger.error(`Auto-cierre fallido para ${id}: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.error(
+          `Auto-cierre fallido para ${id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
     return rows.length;
@@ -254,14 +279,24 @@ export class ElectionsService {
   async createCandidate(dto: CreateCandidateDto): Promise<Candidate> {
     const election = await this.findElectionById(dto.electionId);
     if (election.status !== 'PROGRAMADA') {
-      throw new BadRequestException('Solo se pueden agregar candidatos a elecciones en estado PROGRAMADA');
+      throw new BadRequestException(
+        'Solo se pueden agregar candidatos a elecciones en estado PROGRAMADA',
+      );
     }
 
     const res = await this.db.query<Record<string, unknown>>(
       `INSERT INTO candidatos (id_eleccion, nombre_frente, nombre_candidato, nombre_cargo, url_foto, mision, logo_frente)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [dto.electionId, dto.frontName, dto.candidateName, dto.position, dto.photoUrl ?? null, dto.mission ?? null, dto.logoFrente ?? null],
+      [
+        dto.electionId,
+        dto.frontName,
+        dto.candidateName,
+        dto.position,
+        dto.photoUrl ?? null,
+        dto.mission ?? null,
+        dto.logoFrente ?? null,
+      ],
     );
     return mapCandidate(res.rows[0]);
   }
@@ -279,7 +314,8 @@ export class ElectionsService {
       'SELECT * FROM candidatos WHERE id = $1',
       [id],
     );
-    if (!res.rows[0]) throw new NotFoundException(`Candidato ${id} no encontrado`);
+    if (!res.rows[0])
+      throw new NotFoundException(`Candidato ${id} no encontrado`);
     return mapCandidate(res.rows[0]);
   }
 
@@ -287,7 +323,9 @@ export class ElectionsService {
     const candidate = await this.findCandidateById(id);
     const election = await this.findElectionById(candidate.electionId);
     if (election.status !== 'PROGRAMADA') {
-      throw new BadRequestException('Solo se pueden eliminar candidatos de elecciones en estado PROGRAMADA');
+      throw new BadRequestException(
+        'Solo se pueden eliminar candidatos de elecciones en estado PROGRAMADA',
+      );
     }
     await this.db.query('DELETE FROM candidatos WHERE id = $1', [id]);
   }

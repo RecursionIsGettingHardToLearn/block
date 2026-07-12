@@ -13,7 +13,10 @@ export default function VoterLayout() {
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
+    <div
+      className="h-screen flex flex-col overflow-hidden"
+      style={{ background: 'var(--bg)' }}
+    >
       {/* Header Minimalista para Votante */}
       <header className="px-8 py-4 flex items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center gap-3">
@@ -21,8 +24,12 @@ export default function VoterLayout() {
             V
           </div>
           <div>
-            <h1 className="text-sm font-black tracking-tighter text-slate-800">SISTEMA DE VOTACIÓN</h1>
-            <p className="text-[9px] font-bold uppercase tracking-widest opacity-40">Sesión de Elector Oficial</p>
+            <h1 className="text-sm font-black tracking-tighter text-slate-800">
+              SISTEMA DE VOTACIÓN
+            </h1>
+            <p className="text-[9px] font-bold uppercase tracking-widest opacity-40">
+              Sesión de Elector Oficial
+            </p>
           </div>
         </div>
 
@@ -32,12 +39,16 @@ export default function VoterLayout() {
               <User size={16} />
             </div>
             <div className="flex flex-col text-right">
-              <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight leading-tight">{user?.name}</span>
-              <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-[0.2em]">{user?.ru}</span>
+              <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight leading-tight">
+                {user?.name}
+              </span>
+              <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-[0.2em]">
+                {user?.ru}
+              </span>
             </div>
           </div>
 
-          <button 
+          <button
             onClick={handleLogout}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-red-600 hover:bg-red-50 transition-all text-[10px] font-black uppercase tracking-widest border border-transparent hover:border-red-100"
           >

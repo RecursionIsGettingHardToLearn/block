@@ -26,12 +26,18 @@ export class AuditController {
       ORDER BY creado_en DESC
       ${electionId ? 'LIMIT 100' : 'LIMIT 500'}
     `;
-    const res = await this.db.query<Record<string, unknown>>(query, electionId ? [electionId] : []);
-    return res.rows.map(row => {
+    const res = await this.db.query<Record<string, unknown>>(
+      query,
+      electionId ? [electionId] : [],
+    );
+    return res.rows.map((row) => {
       const createdAt = row.createdAt as Date | string;
       return {
         ...row,
-        createdAt: createdAt instanceof Date ? createdAt.toISOString() : new Date(createdAt).toISOString(),
+        createdAt:
+          createdAt instanceof Date
+            ? createdAt.toISOString()
+            : new Date(createdAt).toISOString(),
       };
     });
   }

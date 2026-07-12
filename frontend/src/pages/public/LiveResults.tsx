@@ -1,57 +1,76 @@
-import { useState, useEffect } from 'react';
-import { Users, ShieldCheck, Landmark, RefreshCw, TrendingUp, Minus, Ban } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Users,
+  ShieldCheck,
+  Landmark,
+  RefreshCw,
+  TrendingUp,
+  Minus,
+  Ban,
+} from 'lucide-react';
 import { useElections } from '../../hooks/useElections';
 import api from '../../api/axios.config';
 
+/** Votos por candidato dentro de una elección: id de candidato -> total. */
+type Tally = Record<string, number>;
+
 export default function LiveResults() {
-  const { elections, loading: loadingElections, fetchElections: refreshElections } = useElections();
-  const [tallies, setTallies] = useState<Record<string, any>>({});
+  const {
+    elections,
+    loading: loadingElections,
+    fetchElections: refreshElections,
+  } = useElections();
+  const [tallies, setTallies] = useState<Record<string, Tally>>({});
   const [loadingTallies, setLoadingTallies] = useState(false);
 
-  const fetchAllTallies = async () => {
+  const fetchAllTallies = useCallback(async () => {
     if (elections.length === 0) return;
     setLoadingTallies(true);
-    const newTallies: Record<string, any> = {};
+    const newTallies: Record<string, Tally> = {};
     try {
       await Promise.all(
         elections.map(async (e) => {
           if (e.status === 'ACTIVA') {
             try {
-              const { data } = await api.get(`/fabric/results/${e.id}`);
-              newTallies[e.id] = data.results || {};
-            } catch (err) {
-              // Silencioso
+              const { data } = await api.get<{ results?: Tally }>(
+                `/fabric/results/${e.id}`,
+              );
+              newTallies[e.id] = data.results ?? {};
+            } catch {
+              // Silencioso: una elección sin resultados no debe romper el resto
             }
           }
-        })
+        }),
       );
       setTallies(newTallies);
     } finally {
       setLoadingTallies(false);
     }
-  };
+  }, [elections]);
 
   useEffect(() => {
-    if (elections.length > 0) {
-      fetchAllTallies();
-    }
-  }, [elections]);
+    void fetchAllTallies();
+  }, [fetchAllTallies]);
 
   const refresh = () => {
     refreshElections();
     fetchAllTallies();
   };
 
-  if (loadingElections || loadingTallies) return (
-    <div className="flex items-center justify-center h-96">
-      <div className="relative">
-        <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full" />
-        <RefreshCw size={48} className="relative animate-spin text-indigo-600 opacity-80" />
+  if (loadingElections || loadingTallies)
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="relative">
+          <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full" />
+          <RefreshCw
+            size={48}
+            className="relative animate-spin text-indigo-600 opacity-80"
+          />
+        </div>
       </div>
-    </div>
-  );
+    );
 
-  const displayElections = elections.filter(e => e.status === 'ACTIVA');
+  const displayElections = elections.filter((e) => e.status === 'ACTIVA');
 
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-16 animate-slide-up pb-48 pt-4">
@@ -82,21 +101,24 @@ export default function LiveResults() {
 
       {displayElections.map((election, idx) => {
         const currentTally = tallies[election.id] || {};
-        const totalVotos = Object.values(currentTally).reduce((a: any, b: any) => a + b, 0) as number;
+        const totalVotos = Object.values(currentTally).reduce(
+          (a, b) => a + b,
+          0,
+        );
         const habilitados = 100;
         const emitidos = totalVotos as number;
         const pendientes = Math.max(0, habilitados - emitidos);
 
         // Crear lista completa incluyendo blancos y nulos
         const allResults = [
-          ...election.candidates.map(c => ({
+          ...election.candidates.map((c) => ({
             id: c.id,
             name: c.candidateName,
             frontName: c.frontName,
             logoFrente: c.logoFrente,
             votos: currentTally[c.id] || 0,
             isSpecial: false,
-            icon: null
+            icon: null,
           })),
           {
             id: 'votos_blancos',
@@ -105,7 +127,7 @@ export default function LiveResults() {
             logoFrente: null,
             votos: currentTally['votos_blancos'] || 0,
             isSpecial: true,
-            icon: 'blank'
+            icon: 'blank',
           },
           {
             id: 'votos_nulos',
@@ -114,8 +136,8 @@ export default function LiveResults() {
             logoFrente: null,
             votos: currentTally['votos_nulos'] || 0,
             isSpecial: true,
-            icon: 'null'
-          }
+            icon: 'null',
+          },
         ];
 
         // Ordenar por votos (descendente) para determinar el líder
@@ -126,7 +148,11 @@ export default function LiveResults() {
         const isLeading = (votos: number) => votos === maxVotos && votos > 0;
 
         return (
-          <section key={election.id} className="flex flex-col gap-6 animate-slide-up" style={{ animationDelay: `${idx * 100}ms` }}>
+          <section
+            key={election.id}
+            className="flex flex-col gap-6 animate-slide-up"
+            style={{ animationDelay: `${idx * 100}ms` }}
+          >
             {/* Election Header Card */}
             <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-[2.5rem] shadow-xl overflow-hidden">
               <div className="p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -141,27 +167,42 @@ export default function LiveResults() {
                     {election.title}
                   </h3>
                 </div>
-                <button 
-                  onClick={refresh} 
+                <button
+                  onClick={refresh}
                   className="p-4 bg-white/10 hover:bg-white/20 rounded-2xl transition-all group"
                 >
-                  <RefreshCw size={18} className="group-hover:rotate-45 transition-transform" />
+                  <RefreshCw
+                    size={18}
+                    className="group-hover:rotate-45 transition-transform"
+                  />
                 </button>
               </div>
-              
+
               {/* Stats Bar */}
               <div className="grid grid-cols-3 bg-indigo-600/90 text-white py-5 border-t border-white/10">
                 <div className="flex flex-col items-center border-r border-white/20">
-                  <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">Habilitados</span>
-                  <span className="text-3xl font-black italic">{habilitados}</span>
+                  <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
+                    Habilitados
+                  </span>
+                  <span className="text-3xl font-black italic">
+                    {habilitados}
+                  </span>
                 </div>
                 <div className="flex flex-col items-center border-r border-white/20">
-                  <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">Ya Votaron</span>
-                  <span className="text-3xl font-black italic text-emerald-300">{emitidos}</span>
+                  <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
+                    Ya Votaron
+                  </span>
+                  <span className="text-3xl font-black italic text-emerald-300">
+                    {emitidos}
+                  </span>
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">Pendientes</span>
-                  <span className="text-3xl font-black italic text-amber-300">{pendientes}</span>
+                  <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
+                    Pendientes
+                  </span>
+                  <span className="text-3xl font-black italic text-amber-300">
+                    {pendientes}
+                  </span>
                 </div>
               </div>
             </div>
@@ -170,7 +211,10 @@ export default function LiveResults() {
             <div className="flex flex-wrap justify-center gap-5">
               {sortedResults.map((result) => {
                 const votos = result.votos;
-                const pct = totalVotos > 0 ? ((votos / totalVotos) * 100).toFixed(1) : '0.0';
+                const pct =
+                  totalVotos > 0
+                    ? ((votos / totalVotos) * 100).toFixed(1)
+                    : '0.0';
                 const leading = isLeading(votos);
 
                 return (
@@ -186,11 +230,13 @@ export default function LiveResults() {
                       }`}
                     >
                       {/* Top accent bar */}
-                      <div className={`h-2 w-full ${
-                        leading
-                          ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400'
-                          : 'bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200 group-hover:from-indigo-200 group-hover:via-indigo-300 group-hover:to-indigo-200'
-                      } transition-all`} />
+                      <div
+                        className={`h-2 w-full ${
+                          leading
+                            ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400'
+                            : 'bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200 group-hover:from-indigo-200 group-hover:via-indigo-300 group-hover:to-indigo-200'
+                        } transition-all`}
+                      />
 
                       {/* Info Area */}
                       <div className="p-5 flex flex-col items-center text-center">
@@ -199,21 +245,42 @@ export default function LiveResults() {
                           {result.isSpecial ? (
                             <div className="w-full h-full rounded-lg bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
                               {result.icon === 'blank' ? (
-                                <Minus size={32} className="text-slate-400" strokeWidth={1.5} />
+                                <Minus
+                                  size={32}
+                                  className="text-slate-400"
+                                  strokeWidth={1.5}
+                                />
                               ) : (
-                                <Ban size={32} className="text-red-400" strokeWidth={1.5} />
+                                <Ban
+                                  size={32}
+                                  className="text-red-400"
+                                  strokeWidth={1.5}
+                                />
                               )}
                             </div>
-                          ) : result.logoFrente && result.logoFrente.startsWith('data:') ? (
-                            <img src={result.logoFrente} alt={result.frontName} className="w-full h-full object-contain" />
+                          ) : result.logoFrente &&
+                            result.logoFrente.startsWith('data:') ? (
+                            <img
+                              src={result.logoFrente}
+                              alt={result.frontName}
+                              className="w-full h-full object-contain"
+                            />
                           ) : result.logoFrente ? (
-                            <img src={result.logoFrente} alt={result.frontName} className="w-full h-full object-contain" />
+                            <img
+                              src={result.logoFrente}
+                              alt={result.frontName}
+                              className="w-full h-full object-contain"
+                            />
                           ) : (
                             <div className="w-full h-full rounded-lg bg-gradient-to-br from-indigo-100 to-indigo-50 flex items-center justify-center">
-                              <Users size={32} className="text-indigo-400" strokeWidth={1.5} />
+                              <Users
+                                size={32}
+                                className="text-indigo-400"
+                                strokeWidth={1.5}
+                              />
                             </div>
                           )}
-                          
+
                           {/* Leading Badge */}
                           {leading && (
                             <div className="absolute -top-2 -right-2 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 px-2 py-1 rounded-full text-[7px] font-black uppercase tracking-widest flex items-center gap-0.5 shadow-lg shadow-amber-500/30">
@@ -236,15 +303,19 @@ export default function LiveResults() {
                         {/* Result Badge */}
                         <div className="w-full mt-auto relative">
                           {/* Gradient background glow */}
-                          <div className={`absolute inset-0 rounded-2xl blur-lg opacity-40 ${
-                            leading ? 'bg-amber-500' : 'bg-slate-900'
-                          }`} />
+                          <div
+                            className={`absolute inset-0 rounded-2xl blur-lg opacity-40 ${
+                              leading ? 'bg-amber-500' : 'bg-slate-900'
+                            }`}
+                          />
 
-                          <div className={`relative w-full rounded-2xl p-4 shadow-lg ${
-                            leading
-                              ? 'bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-amber-950 shadow-amber-500/40'
-                              : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white'
-                          }`}>
+                          <div
+                            className={`relative w-full rounded-2xl p-4 shadow-lg ${
+                              leading
+                                ? 'bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-amber-950 shadow-amber-500/40'
+                                : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white'
+                            }`}
+                          >
                             <div className="text-3xl font-black italic tracking-tighter leading-none">
                               {pct}%
                             </div>
@@ -274,12 +345,13 @@ export default function LiveResults() {
               Integridad del Proceso
             </h4>
             <p className="text-xs text-slate-600 font-medium leading-relaxed">
-              Los datos mostrados son oficiales e inmutables, respaldados por tecnología blockchain Hyperledger Fabric.
+              Los datos mostrados son oficiales e inmutables, respaldados por
+              tecnología blockchain Hyperledger Fabric.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3 opacity-20 text-[9px] font-black uppercase tracking-[0.5em] text-slate-400">
-          <Landmark size={18} strokeWidth={1.5} /> 
+          <Landmark size={18} strokeWidth={1.5} />
           FICCT 2026
         </div>
       </div>

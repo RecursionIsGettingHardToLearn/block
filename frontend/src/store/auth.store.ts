@@ -4,11 +4,14 @@ import type { AuthResponse, CualquierRol } from '../types';
 type AuthUser = AuthResponse['user'];
 
 // Normaliza tanto roles nuevos (ADMINISTRADOR/VOTANTE) como los anteriores (ADMIN/ESTUDIANTE/DOCENTE)
-function normalizeRole(role: CualquierRol | undefined): 'ADMINISTRADOR' | 'AUDITOR' | 'VOTANTE' | null {
+function normalizeRole(
+  role: CualquierRol | undefined,
+): 'ADMINISTRADOR' | 'AUDITOR' | 'VOTANTE' | null {
   if (!role) return null;
   if (role === 'ADMIN' || role === 'ADMINISTRADOR') return 'ADMINISTRADOR';
   if (role === 'AUDITOR') return 'AUDITOR';
-  if (role === 'VOTANTE' || role === 'ESTUDIANTE' || role === 'DOCENTE') return 'VOTANTE';
+  if (role === 'VOTANTE' || role === 'ESTUDIANTE' || role === 'DOCENTE')
+    return 'VOTANTE';
   return null;
 }
 
@@ -46,8 +49,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ token: null, user: null });
   },
 
-  isAdmin()   { return normalizeRole(get().user?.role) === 'ADMINISTRADOR'; },
-  isAuditor() { return normalizeRole(get().user?.role) === 'AUDITOR'; },
-  isVoter()   { return normalizeRole(get().user?.role) === 'VOTANTE'; },
-  getRolNormalizado() { return normalizeRole(get().user?.role); },
+  isAdmin() {
+    return normalizeRole(get().user?.role) === 'ADMINISTRADOR';
+  },
+  isAuditor() {
+    return normalizeRole(get().user?.role) === 'AUDITOR';
+  },
+  isVoter() {
+    return normalizeRole(get().user?.role) === 'VOTANTE';
+  },
+  getRolNormalizado() {
+    return normalizeRole(get().user?.role);
+  },
 }));

@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import type { ClipboardEvent } from 'react';
-import { CheckCircle2, ClipboardPaste, Search, ShieldCheck, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  ClipboardPaste,
+  Search,
+  ShieldCheck,
+  XCircle,
+} from 'lucide-react';
 import api from '../../api/axios.config';
 import { useElections } from '../../hooks/useElections';
 
@@ -27,7 +33,8 @@ export default function VoteValidator() {
     if (localMatches?.length) return localMatches[localMatches.length - 1];
 
     const fabricTxMatches = text.match(/\b[0-9a-fA-F]{64}\b/g);
-    if (fabricTxMatches?.length) return fabricTxMatches[fabricTxMatches.length - 1];
+    if (fabricTxMatches?.length)
+      return fabricTxMatches[fabricTxMatches.length - 1];
 
     return text
       .replace(/^txId\s*[:=]\s*/i, '')
@@ -65,10 +72,13 @@ export default function VoteValidator() {
     setError('');
     setResult(null);
     try {
-      const { data } = await api.get<VoteVerification>(`/fabric/verify/${encodeURIComponent(txId)}`);
+      const { data } = await api.get<VoteVerification>(
+        `/fabric/verify/${encodeURIComponent(txId)}`,
+      );
       setResult(data);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      const msg = (err as { response?: { data?: { message?: string } } })
+        ?.response?.data?.message;
       setError(msg ?? 'No se pudo validar el código');
     } finally {
       setLoading(false);
@@ -87,7 +97,9 @@ export default function VoteValidator() {
             <ShieldCheck size={30} strokeWidth={2.5} />
           </div>
           <div>
-            <h2 className="text-2xl font-black uppercase tracking-tight">Validación de Voto</h2>
+            <h2 className="text-2xl font-black uppercase tracking-tight">
+              Validación de Voto
+            </h2>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.25em] mt-1">
               Verifica si un código fue contado
             </p>
@@ -97,13 +109,18 @@ export default function VoteValidator() {
 
       <div className="bg-white border border-slate-200 rounded-[2rem] p-5 shadow-sm flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search
+            size={16}
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+          />
           <input
             value={code}
             onChange={(e) => updateCode(e.target.value)}
             onPaste={handlePaste}
             onFocus={(e) => e.currentTarget.select()}
-            onKeyDown={(e) => { if (e.key === 'Enter') validate(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') validate();
+            }}
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
@@ -138,19 +155,33 @@ export default function VoteValidator() {
       )}
 
       {result && (
-        <div className={`rounded-[2rem] border p-7 shadow-sm ${
-          result.counted ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'
-        }`}>
+        <div
+          className={`rounded-[2rem] border p-7 shadow-sm ${
+            result.counted
+              ? 'bg-emerald-50 border-emerald-200'
+              : 'bg-red-50 border-red-200'
+          }`}
+        >
           <div className="flex items-start gap-4">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-              result.counted ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
-            }`}>
-              {result.counted ? <CheckCircle2 size={26} /> : <XCircle size={26} />}
+            <div
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                result.counted
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-red-600 text-white'
+              }`}
+            >
+              {result.counted ? (
+                <CheckCircle2 size={26} />
+              ) : (
+                <XCircle size={26} />
+              )}
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className={`text-xl font-black uppercase tracking-tight ${
-                result.counted ? 'text-emerald-800' : 'text-red-800'
-              }`}>
+              <h3
+                className={`text-xl font-black uppercase tracking-tight ${
+                  result.counted ? 'text-emerald-800' : 'text-red-800'
+                }`}
+              >
                 {result.counted ? 'Voto contado' : 'Voto no contado'}
               </h3>
               <p className="text-sm mt-1 text-slate-600">{result.message}</p>
@@ -160,7 +191,12 @@ export default function VoteValidator() {
                 <Info label="Origen" value={result.source} />
                 <Info label="Canal" value={result.channel ?? 'No registrado'} />
                 <Info label="Estado" value={result.status} />
-                <Info label="Elección" value={election?.title ?? result.electionId ?? 'No encontrada'} />
+                <Info
+                  label="Elección"
+                  value={
+                    election?.title ?? result.electionId ?? 'No encontrada'
+                  }
+                />
               </div>
             </div>
           </div>
@@ -170,11 +206,25 @@ export default function VoteValidator() {
   );
 }
 
-function Info({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+function Info({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
     <div className="bg-white/70 border border-white rounded-2xl p-4 min-w-0">
-      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">{label}</p>
-      <p className={`text-sm font-bold text-slate-800 break-all ${mono ? 'font-mono' : ''}`}>{value}</p>
+      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
+        {label}
+      </p>
+      <p
+        className={`text-sm font-bold text-slate-800 break-all ${mono ? 'font-mono' : ''}`}
+      >
+        {value}
+      </p>
     </div>
   );
 }

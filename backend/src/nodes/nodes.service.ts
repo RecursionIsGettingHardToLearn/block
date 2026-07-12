@@ -1,22 +1,30 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { exec } from 'child_process';
 import { promises as fsp } from 'node:fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
+import { getExecErrorDetail, getExecErrorSummary } from '../common/errors';
 import { DatabaseService } from '../database/database.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { DeployNodeDto } from './dto/deploy-node.dto';
 
 const execAsync = promisify(exec);
 
-const CRYPTO_BASE = process.env.FABRIC_CRYPTO_PATH
-  ?? path.resolve(__dirname, '../../../fabric/network/crypto-material');
+const CRYPTO_BASE =
+  process.env.FABRIC_CRYPTO_PATH ??
+  path.resolve(__dirname, '../../../fabric/network/crypto-material');
 
 async function getDockerAllocatedPorts(): Promise<number[]> {
   try {
-    const { stdout } = await execAsync('docker ps -a --format "{{.Ports}}"', { timeout: 10_000 });
+    const { stdout } = await execAsync('docker ps -a --format "{{.Ports}}"', {
+      timeout: 10_000,
+    });
     const ports: number[] = [];
     // Matches: 0.0.0.0:7984-> or :::7984-> or just :7984->
     const re = /:(\d{4,5})->/g;
@@ -40,7 +48,9 @@ function findFreePort(start: number, exclude: number[] = []): Promise<number> {
         const addr = server.address() as net.AddressInfo;
         server.close(() => resolve(addr.port));
       });
-      server.on('error', () => tryPort(p + 1).then(resolve, reject));
+      server.on('error', () => {
+        void tryPort(p + 1).then(resolve, reject);
+      });
     });
   };
 
@@ -58,56 +68,94 @@ export interface FabricNode {
   creadoEn: Date;
 }
 
+/** Fila de `nodos_fabric` tal como la devuelve Postgres (snake_case). */
+interface FabricNodeRow {
+  id: string;
+  nombre: string;
+  endpoint: string;
+  host_alias: string;
+  activo: boolean;
+  prioridad: number;
+  creado_en: Date;
+}
+
 @Injectable()
 export class NodesService {
   constructor(private readonly db: DatabaseService) {}
 
-  async getNextFreePort(): Promise<{ port: number; endpoint: string; hostAlias: string; nombre: string }> {
-    const { rows } = await this.db.query<any>(
+  async getNextFreePort(): Promise<{
+    port: number;
+    endpoint: string;
+    hostAlias: string;
+    nombre: string;
+  }> {
+    const { rows } = await this.db.query<FabricNodeRow>(
       `SELECT endpoint FROM nodos_fabric ORDER BY creado_en ASC`,
     );
     const usedPorts = rows
-      .map((r: any) => { const m = r.endpoint.match(/:(\d+)$/); return m ? parseInt(m[1]) : 0; })
-      .filter((p: number) => p > 0);
+      .map((row) => {
+        const match = /:(\d+)$/.exec(row.endpoint);
+        return match ? parseInt(match[1], 10) : 0;
+      })
+      .filter((port) => port > 0);
 
     const dockerPorts = await getDockerAllocatedPorts();
-    const excluded = [...new Set([...usedPorts, ...dockerPorts, 7050, 7051, 7052, 7054, 8051, 8052, 17050])];
-    const port     = await findFreePort(9051, excluded);
-    const n        = rows.length + 2;
+    const excluded = [
+      ...new Set([
+        ...usedPorts,
+        ...dockerPorts,
+        7050,
+        7051,
+        7052,
+        7054,
+        8051,
+        8052,
+        17050,
+      ]),
+    ];
+    const port = await findFreePort(9051, excluded);
+    const n = rows.length + 2;
     return {
       port,
-      endpoint:  `localhost:${port}`,
+      endpoint: `localhost:${port}`,
       hostAlias: `peer${n}.ficct.edu.bo`,
-      nombre:    `peer${n}`,
+      nombre: `peer${n}`,
     };
   }
 
   async findAll(): Promise<FabricNode[]> {
-    const { rows } = await this.db.query<any>(
+    const { rows } = await this.db.query<FabricNodeRow>(
       `SELECT id, nombre, endpoint, host_alias, activo, prioridad, creado_en
        FROM nodos_fabric
        ORDER BY prioridad ASC, creado_en ASC`,
     );
-    const nodes = rows.map(this.map);
-    return Promise.all(nodes.map(async (node) => ({
-      ...node,
-      cryptoReady: await this.hasPeerCrypto(node.hostAlias),
-    })));
+    const nodes = rows.map((row) => this.map(row));
+    return Promise.all(
+      nodes.map(async (node) => ({
+        ...node,
+        cryptoReady: await this.hasPeerCrypto(node.hostAlias),
+      })),
+    );
   }
 
-  async findFirstActive(): Promise<{ endpoint: string; hostAlias: string } | null> {
-    const { rows } = await this.db.query<any>(
+  async findFirstActive(): Promise<{
+    endpoint: string;
+    hostAlias: string;
+  } | null> {
+    const { rows } = await this.db.query<FabricNodeRow>(
       `SELECT endpoint, host_alias
        FROM nodos_fabric
        WHERE activo = true
        ORDER BY prioridad ASC, creado_en ASC
        LIMIT 1`,
     );
-    return rows.length > 0 ? { endpoint: rows[0].endpoint, hostAlias: rows[0].host_alias } : null;
+    return rows.length > 0
+      ? { endpoint: rows[0].endpoint, hostAlias: rows[0].host_alias }
+      : null;
   }
 
   async create(dto: CreateNodeDto): Promise<FabricNode> {
-    const { rows } = await this.db.query<any>(
+    const { rows } = await this.db.query<FabricNodeRow>(
       `INSERT INTO nodos_fabric (nombre, endpoint, host_alias, activo)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (nombre) DO UPDATE
@@ -121,32 +169,39 @@ export class NodesService {
   }
 
   async toggle(id: string): Promise<{ node: FabricNode; logs: string }> {
-    const { rows: cur } = await this.db.query<any>(
-      `SELECT * FROM nodos_fabric WHERE id = $1`, [id],
+    const { rows: cur } = await this.db.query<FabricNodeRow>(
+      `SELECT * FROM nodos_fabric WHERE id = $1`,
+      [id],
     );
     if (!cur.length) throw new NotFoundException('Nodo no encontrado');
 
-    const current      = this.map(cur[0]);
-    const action       = current.activo ? 'stop' : 'start';
-    const peerCtr      = current.hostAlias;
-    const couchCtr     = `couchdb-${current.nombre}`;
-    const lines: string[] = [`[INFO] Ejecutando: docker ${action} en ${current.nombre}`];
+    const current = this.map(cur[0]);
+    const action = current.activo ? 'stop' : 'start';
+    const peerCtr = current.hostAlias;
+    const couchCtr = `couchdb-${current.nombre}`;
+    const lines: string[] = [
+      `[INFO] Ejecutando: docker ${action} en ${current.nombre}`,
+    ];
 
     for (const ctr of [peerCtr, couchCtr]) {
       try {
-        const { stdout } = await execAsync(`docker ${action} ${ctr}`, { timeout: 30_000 });
+        const { stdout } = await execAsync(`docker ${action} ${ctr}`, {
+          timeout: 30_000,
+        });
         lines.push(`[OK]   ${ctr}: ${stdout.trim() || 'done'}`);
-      } catch (e: any) {
-        lines.push(`[WARN] ${ctr}: ${(e.stderr ?? e.message).split('\n')[0].trim()}`);
+      } catch (err: unknown) {
+        lines.push(`[WARN] ${ctr}: ${getExecErrorSummary(err)}`);
       }
     }
 
-    const { rows } = await this.db.query<any>(
+    const { rows } = await this.db.query<FabricNodeRow>(
       `UPDATE nodos_fabric SET activo = NOT activo WHERE id = $1 RETURNING *`,
       [id],
     );
 
-    lines.push(`[INFO] Estado en DB → ${rows[0].activo ? 'ACTIVO' : 'INACTIVO'}`);
+    lines.push(
+      `[INFO] Estado en DB → ${rows[0].activo ? 'ACTIVO' : 'INACTIVO'}`,
+    );
     return { node: this.map(rows[0]), logs: lines.join('\n') };
   }
 
@@ -154,44 +209,61 @@ export class NodesService {
     await this.db.query(`DELETE FROM nodos_fabric WHERE id = $1`, [id]);
   }
 
-  async deployPeer(dto: DeployNodeDto): Promise<{ node: FabricNode; logs: string }> {
-    const peerName   = dto.nombre;
+  async deployPeer(
+    dto: DeployNodeDto,
+  ): Promise<{ node: FabricNode; logs: string }> {
+    const peerName = dto.nombre;
     const dockerPorts = await getDockerAllocatedPorts();
-    const peerPort   = await findFreePort(9051,  dockerPorts);
-    const couchPort  = await findFreePort(7984,  [...dockerPorts, peerPort]);
-    const opsPort    = await findFreePort(10000, [...dockerPorts, peerPort, couchPort]);
-    const ccPort    = peerPort + 1;
+    const peerPort = await findFreePort(9051, dockerPorts);
+    const couchPort = await findFreePort(7984, [...dockerPorts, peerPort]);
+    const opsPort = await findFreePort(10000, [
+      ...dockerPorts,
+      peerPort,
+      couchPort,
+    ]);
+    const ccPort = peerPort + 1;
 
-    const ORG  = 'ficct.edu.bo';
-    const MSP  = 'FICCTOrgMSP';
+    const ORG = 'ficct.edu.bo';
+    const MSP = 'FICCTOrgMSP';
     const CHAN = 'evoting';
-    const CC   = 'evoting-cc';
-    const CCv  = '1.0';
+    const CC = 'evoting-cc';
+    const CCv = '1.0';
 
-    const peerDir = path.join(CRYPTO_BASE, 'peerOrganizations', ORG, 'peers', `${peerName}.${ORG}`);
-    const mspDir  = path.join(peerDir, 'msp');
-    const tlsDir  = path.join(peerDir, 'tls');
+    const peerDir = path.join(
+      CRYPTO_BASE,
+      'peerOrganizations',
+      ORG,
+      'peers',
+      `${peerName}.${ORG}`,
+    );
+    const mspDir = path.join(peerDir, 'msp');
+    const tlsDir = path.join(peerDir, 'tls');
 
     // Paths inside CLI container (crypto-material mounted as /crypto)
-    const cOrg      = `/crypto/peerOrganizations/${ORG}`;
-    const cPeer     = `${cOrg}/peers/${peerName}.${ORG}`;
-    const adminMsp  = `${cOrg}/users/Admin@${ORG}/msp`;
+    const cOrg = `/crypto/peerOrganizations/${ORG}`;
+    const cPeer = `${cOrg}/peers/${peerName}.${ORG}`;
+    const adminMsp = `${cOrg}/users/Admin@${ORG}/msp`;
 
     const logs: string[] = [];
-    const log   = (m: string) => logs.push(m);
-    const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+    const log = (m: string) => logs.push(m);
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-    const run = async (cmd: string, label: string, optional = false): Promise<string> => {
+    const run = async (
+      cmd: string,
+      label: string,
+      optional = false,
+    ): Promise<string> => {
       log(`[RUN] ${label}`);
       try {
         const { stdout, stderr } = await execAsync(cmd, { timeout: 120_000 });
         if (stdout.trim()) log(stdout.trim());
         if (stderr.trim()) log(`[stderr] ${stderr.trim()}`);
         return stdout;
-      } catch (err: any) {
-        const detail = `${err.message ?? ''}\n${err.stderr ?? ''}`.trim();
+      } catch (err: unknown) {
+        const detail = getExecErrorDetail(err);
         log(`[${optional ? 'WARN' : 'ERROR'}] ${label}: ${detail}`);
-        if (!optional) throw new InternalServerErrorException(`${label} falló: ${detail}`);
+        if (!optional)
+          throw new InternalServerErrorException(`${label} falló: ${detail}`);
         return '';
       }
     };
@@ -201,34 +273,46 @@ export class NodesService {
     // ── 0. Verificar que no existe ───────────────────────────────────────────
     try {
       await fsp.access(mspDir);
-      throw new InternalServerErrorException(`Ya existe crypto para ${peerName}. Usa otro nombre.`);
-    } catch (e: any) {
-      if (e instanceof InternalServerErrorException) throw e;
+      throw new InternalServerErrorException(
+        `Ya existe crypto para ${peerName}. Usa otro nombre.`,
+      );
+    } catch (err: unknown) {
+      if (err instanceof InternalServerErrorException) throw err;
     }
 
     // ── 1. Crear estructura de directorios ───────────────────────────────────
     log('[INFO] Creando estructura de directorios...');
-    for (const sub of ['msp/cacerts', 'msp/signcerts', 'msp/keystore', 'msp/tlscacerts', 'msp/admincerts', 'tls']) {
+    for (const sub of [
+      'msp/cacerts',
+      'msp/signcerts',
+      'msp/keystore',
+      'msp/tlscacerts',
+      'msp/admincerts',
+      'tls',
+    ]) {
       await fsp.mkdir(path.join(peerDir, sub), { recursive: true });
     }
 
     // ── 2. config.yaml ───────────────────────────────────────────────────────
-    await fsp.writeFile(path.join(mspDir, 'config.yaml'), [
-      'NodeOUs:',
-      '  Enable: true',
-      '  ClientOUIdentifier:',
-      `    Certificate: cacerts/ca.${ORG}-cert.pem`,
-      '    OrganizationalUnitIdentifier: client',
-      '  PeerOUIdentifier:',
-      `    Certificate: cacerts/ca.${ORG}-cert.pem`,
-      '    OrganizationalUnitIdentifier: peer',
-      '  AdminOUIdentifier:',
-      `    Certificate: cacerts/ca.${ORG}-cert.pem`,
-      '    OrganizationalUnitIdentifier: admin',
-      '  OrdererOUIdentifier:',
-      `    Certificate: cacerts/ca.${ORG}-cert.pem`,
-      '    OrganizationalUnitIdentifier: orderer',
-    ].join('\n'));
+    await fsp.writeFile(
+      path.join(mspDir, 'config.yaml'),
+      [
+        'NodeOUs:',
+        '  Enable: true',
+        '  ClientOUIdentifier:',
+        `    Certificate: cacerts/ca.${ORG}-cert.pem`,
+        '    OrganizationalUnitIdentifier: client',
+        '  PeerOUIdentifier:',
+        `    Certificate: cacerts/ca.${ORG}-cert.pem`,
+        '    OrganizationalUnitIdentifier: peer',
+        '  AdminOUIdentifier:',
+        `    Certificate: cacerts/ca.${ORG}-cert.pem`,
+        '    OrganizationalUnitIdentifier: admin',
+        '  OrdererOUIdentifier:',
+        `    Certificate: cacerts/ca.${ORG}-cert.pem`,
+        '    OrganizationalUnitIdentifier: orderer',
+      ].join('\n'),
+    );
 
     // ── 3. Script de certificados (escrito en tmpdir sin espacios) ───────────
     // El script se ejecuta DENTRO del CLI container donde openssl está disponible
@@ -277,13 +361,19 @@ echo "[CERT] Certificados generados"
 `;
 
     // os.tmpdir() no tiene espacios en Windows (C:\Users\...\AppData\Local\Temp)
-    const tmpScript     = path.join(os.tmpdir(), `deploy-${peerName}.sh`);
-    const tmpScriptFwd  = tmpScript.replace(/\\/g, '/');
+    const tmpScript = path.join(os.tmpdir(), `deploy-${peerName}.sh`);
+    const tmpScriptFwd = tmpScript.replace(/\\/g, '/');
     await fsp.writeFile(tmpScript, scriptContent);
 
     // ── 4. Copiar script al CLI y ejecutar ───────────────────────────────────
-    await run(`docker cp "${tmpScriptFwd}" cli:/tmp/deploy-${peerName}.sh`, 'Copiando script al CLI');
-    await run(`docker exec cli bash /tmp/deploy-${peerName}.sh`, 'Generando certificados (openssl en CLI)');
+    await run(
+      `docker cp "${tmpScriptFwd}" cli:/tmp/deploy-${peerName}.sh`,
+      'Copiando script al CLI',
+    );
+    await run(
+      `docker exec cli bash /tmp/deploy-${peerName}.sh`,
+      'Generando certificados (openssl en CLI)',
+    );
     await fsp.unlink(tmpScript).catch(() => {});
 
     log('[INFO] Certificados generados');
@@ -345,7 +435,9 @@ echo "[CERT] Certificados generados"
       true,
     );
     if (!psOut.includes('Up')) {
-      log(`[WARN] ${peerName} puede no estar corriendo. Verifica: docker logs ${peerName}.${ORG}`);
+      log(
+        `[WARN] ${peerName} puede no estar corriendo. Verifica: docker logs ${peerName}.${ORG}`,
+      );
     }
 
     // ── 8. Unir al canal ─────────────────────────────────────────────────────
@@ -371,16 +463,16 @@ echo "[CERT] Certificados generados"
     log(`[INFO] ¡${peerName} desplegado exitosamente!`);
 
     const node = await this.create({
-      nombre:    peerName,
-      endpoint:  `localhost:${peerPort}`,
+      nombre: peerName,
+      endpoint: `localhost:${peerPort}`,
       hostAlias: `${peerName}.${ORG}`,
-      activo:    true,
+      activo: true,
     });
 
     return { node, logs: logs.join('\n') };
   }
 
-  private map(r: any): FabricNode {
+  private map(r: FabricNodeRow): FabricNode {
     return {
       id: r.id,
       nombre: r.nombre,

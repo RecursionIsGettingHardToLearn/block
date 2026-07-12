@@ -20,7 +20,9 @@ export function useElections() {
     }
   }, []);
 
-  useEffect(() => { fetchElections(); }, [fetchElections]);
+  useEffect(() => {
+    fetchElections();
+  }, [fetchElections]);
 
   async function createElection(payload: {
     title: string;
@@ -34,8 +36,13 @@ export function useElections() {
     return data;
   }
 
-  async function updateStatus(id: string, status: ElectionStatus): Promise<void> {
-    const { data } = await api.patch<Election>(`/elections/${id}/status`, { status });
+  async function updateStatus(
+    id: string,
+    status: ElectionStatus,
+  ): Promise<void> {
+    const { data } = await api.patch<Election>(`/elections/${id}/status`, {
+      status,
+    });
     setElections((prev) => prev.map((e) => (e.id === id ? data : e)));
   }
 
@@ -55,7 +62,10 @@ export function useElections() {
     await fetchElections();
   }
 
-  async function removeCandidate(electionId: string, candidateId: string): Promise<void> {
+  async function removeCandidate(
+    electionId: string,
+    candidateId: string,
+  ): Promise<void> {
     await api.delete(`/elections/${electionId}/candidates/${candidateId}`);
     await fetchElections();
   }

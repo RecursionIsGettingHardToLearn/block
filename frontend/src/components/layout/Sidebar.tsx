@@ -1,49 +1,73 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Vote, Users, ShieldCheck, BarChart2,
-  BarChart, Server, Layers, ChevronRight, Lock,
+  LayoutDashboard,
+  Vote,
+  Users,
+  ShieldCheck,
+  BarChart2,
+  BarChart,
+  Server,
+  Layers,
+  ChevronRight,
+  Lock,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 
 const adminLinks = [
-  { to: '/admin/dashboard',  label: 'Dashboard',   Icon: LayoutDashboard },
-  { to: '/admin/elecciones', label: 'Elecciones',  Icon: Vote },
-  { to: '/admin/usuarios',   label: 'Usuarios',    Icon: Users },
+  { to: '/admin/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
+  { to: '/admin/elecciones', label: 'Elecciones', Icon: Vote },
+  { to: '/admin/usuarios', label: 'Usuarios', Icon: Users },
   // { to: '/admin/auditoria',  label: 'Auditoría',   Icon: ShieldCheck }, // Oculto - solo accesible para perfil AUDITOR
-  { to: '/admin/resultados', label: 'Resultados',  Icon: BarChart2 },
-  { to: '/admin/nodos',      label: 'Nodos',       Icon: Server },
-  { to: '/admin/canales',    label: 'Canales',     Icon: Layers },
-  { to: '/admin/ca',         label: 'CA',          Icon: Lock },
+  { to: '/admin/resultados', label: 'Resultados', Icon: BarChart2 },
+  { to: '/admin/nodos', label: 'Nodos', Icon: Server },
+  { to: '/admin/canales', label: 'Canales', Icon: Layers },
+  { to: '/admin/ca', label: 'CA', Icon: Lock },
 ];
 
 const voterLinks = [
-  { to: '/votante/votar',      label: 'Emitir Voto', Icon: Vote },
-  { to: '/votante/resultados', label: 'Resultados',  Icon: BarChart2 },
+  { to: '/votante/votar', label: 'Emitir Voto', Icon: Vote },
+  { to: '/votante/resultados', label: 'Resultados', Icon: BarChart2 },
 ];
 
 const auditorLinks = [
-  { to: '/auditor/resultados', label: 'Resultados',  Icon: BarChart },
-  { to: '/auditor/validar',    label: 'Validar voto', Icon: ShieldCheck },
+  { to: '/auditor/resultados', label: 'Resultados', Icon: BarChart },
+  { to: '/auditor/validar', label: 'Validar voto', Icon: ShieldCheck },
 ];
 
-const rolMeta: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-  ADMINISTRADOR: { label: 'Administrador', color: 'text-amber-600', bg: 'bg-amber-50', dot: 'bg-amber-500' },
-  VOTANTE:       { label: 'Votante',       color: 'text-emerald-600', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
-  AUDITOR:       { label: 'Auditor',       color: 'text-blue-600', bg: 'bg-blue-50', dot: 'bg-blue-500' },
+const rolMeta: Record<
+  string,
+  { label: string; color: string; bg: string; dot: string }
+> = {
+  ADMINISTRADOR: {
+    label: 'Administrador',
+    color: 'text-amber-600',
+    bg: 'bg-amber-50',
+    dot: 'bg-amber-500',
+  },
+  VOTANTE: {
+    label: 'Votante',
+    color: 'text-emerald-600',
+    bg: 'bg-emerald-50',
+    dot: 'bg-emerald-500',
+  },
+  AUDITOR: {
+    label: 'Auditor',
+    color: 'text-blue-600',
+    bg: 'bg-blue-50',
+    dot: 'bg-blue-500',
+  },
 };
 
 export default function Sidebar() {
-  const isAdmin   = useAuthStore((s) => s.isAdmin());
+  const isAdmin = useAuthStore((s) => s.isAdmin());
   const isAuditor = useAuthStore((s) => s.isAuditor());
-  const rol       = useAuthStore((s) => s.getRolNormalizado()) ?? 'VOTANTE';
+  const rol = useAuthStore((s) => s.getRolNormalizado()) ?? 'VOTANTE';
 
   const links = isAdmin ? adminLinks : isAuditor ? auditorLinks : voterLinks;
-  const meta  = rolMeta[rol] ?? rolMeta['VOTANTE'];
+  const meta = rolMeta[rol] ?? rolMeta['VOTANTE'];
 
   return (
-    <aside
-      className="w-52 sm:w-64 shrink-0 flex flex-col py-6 bg-slate-50 border-r border-slate-200"
-    >
+    <aside className="w-52 sm:w-64 shrink-0 flex flex-col py-6 bg-slate-50 border-r border-slate-200">
       {/* Logo Area */}
       <div className="px-6 mb-8">
         <div className="flex items-center gap-3">
@@ -63,12 +87,17 @@ export default function Sidebar() {
 
       {/* Role Badge */}
       <div className="mx-4 mb-6 px-4 py-3 rounded-2xl flex items-center gap-3 bg-slate-100">
-        <span className={`w-2 h-2 rounded-full shrink-0 ${meta.dot} animate-pulse-dot`} aria-hidden="true" />
+        <span
+          className={`w-2 h-2 rounded-full shrink-0 ${meta.dot} animate-pulse-dot`}
+          aria-hidden="true"
+        />
         <div className="flex flex-col flex-1 min-w-0">
           <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">
             Rol actual
           </span>
-          <span className={`text-xs font-black uppercase tracking-tight truncate ${meta.color}`}>
+          <span
+            className={`text-xs font-black uppercase tracking-tight truncate ${meta.color}`}
+          >
             {meta.label}
           </span>
         </div>
@@ -96,18 +125,22 @@ export default function Sidebar() {
               >
                 {({ isActive }) => (
                   <>
-                    <div className={`relative p-1.5 rounded-lg transition-colors ${
-                      isActive
-                        ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/30'
-                        : 'text-slate-400 group-hover:text-slate-600'
-                    }`}>
+                    <div
+                      className={`relative p-1.5 rounded-lg transition-colors ${
+                        isActive
+                          ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/30'
+                          : 'text-slate-400 group-hover:text-slate-600'
+                      }`}
+                    >
                       <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
                     </div>
-                    <span className={`flex-1 ${
-                      isActive
-                        ? 'font-semibold text-indigo-600'
-                        : 'text-slate-600'
-                    }`}>
+                    <span
+                      className={`flex-1 ${
+                        isActive
+                          ? 'font-semibold text-indigo-600'
+                          : 'text-slate-600'
+                      }`}
+                    >
                       {label}
                     </span>
                     {isActive && (

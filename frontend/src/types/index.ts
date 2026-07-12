@@ -7,11 +7,7 @@ export type CualquierRol = RolUsuario | RolLegado;
 
 // ── Estado de elección ────────────────────────────────────────────────────────
 export type EstadoEleccion =
-  | 'BORRADOR'
-  | 'PROGRAMADA'
-  | 'ACTIVA'
-  | 'CERRADA'
-  | 'ESCRUTADA';
+  'BORRADOR' | 'PROGRAMADA' | 'ACTIVA' | 'CERRADA' | 'ESCRUTADA';
 export type ElectionStatus = EstadoEleccion;
 
 // ── Tipos heredados ───────────────────────────────────────────────────────────

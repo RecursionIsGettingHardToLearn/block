@@ -14,7 +14,9 @@ export default function ConfirmModal({ message, onConfirm, onCancel }: Props) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-msg"
-      onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
     >
       <div
         className="w-[360px] mx-4 rounded-2xl p-6 flex flex-col gap-5 animate-scale-in"
@@ -33,10 +35,17 @@ export default function ConfirmModal({ message, onConfirm, onCancel }: Props) {
             <AlertTriangle size={17} style={{ color: 'var(--error)' }} />
           </div>
           <div>
-            <p className="font-semibold text-sm mb-1" style={{ color: 'var(--text-1)' }}>
+            <p
+              className="font-semibold text-sm mb-1"
+              style={{ color: 'var(--text-1)' }}
+            >
               Confirmar acción
             </p>
-            <p id="confirm-msg" className="text-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
+            <p
+              id="confirm-msg"
+              className="text-sm leading-relaxed"
+              style={{ color: 'var(--text-2)' }}
+            >
               {message}
             </p>
           </div>

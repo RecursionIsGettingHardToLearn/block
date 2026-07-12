@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
@@ -8,24 +8,26 @@ export default function Login() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      redirectByRole();
-    }
-  }, [isAuthenticated]);
-
   const [identificador, setIdentificador] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  function redirectByRole() {
+  // Declarado antes del efecto que lo usa: al ser una constante, referenciarlo
+  // en el arreglo de dependencias antes de su inicialización sería un error.
+  const redirectByRole = useCallback(() => {
     const store = useAuthStore.getState();
-    if (store.isAdmin())        navigate('/admin/dashboard');
+    if (store.isAdmin()) navigate('/admin/dashboard');
     else if (store.isAuditor()) navigate('/auditor/resultados');
-    else                        navigate('/votante/votar');
-  }
+    else navigate('/votante/votar');
+  }, [navigate]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      redirectByRole();
+    }
+  }, [isAuthenticated, redirectByRole]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -54,14 +56,23 @@ export default function Login() {
           border: '1px solid var(--border)',
         }}
       >
-        <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--text-1)' }}>Iniciar sesión</h1>
+        <h1
+          className="text-xl font-bold mb-1"
+          style={{ color: 'var(--text-1)' }}
+        >
+          Iniciar sesión
+        </h1>
         <p className="text-sm mb-7" style={{ color: 'var(--text-2)' }}>
           Ingresa con tus credenciales institucionales
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="identificador" className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
+            <label
+              htmlFor="identificador"
+              className="text-xs font-semibold"
+              style={{ color: 'var(--text-2)' }}
+            >
               Identificador
             </label>
             <input
@@ -79,13 +90,21 @@ export default function Login() {
                 color: 'var(--text-1)',
                 outline: 'none',
               }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--brand)')}
-              onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+              onFocus={(e) =>
+                (e.currentTarget.style.borderColor = 'var(--brand)')
+              }
+              onBlur={(e) =>
+                (e.currentTarget.style.borderColor = 'var(--border)')
+              }
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="password" className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
+            <label
+              htmlFor="password"
+              className="text-xs font-semibold"
+              style={{ color: 'var(--text-2)' }}
+            >
               Contraseña
             </label>
             <div className="relative">
@@ -102,14 +121,20 @@ export default function Login() {
                   color: 'var(--text-1)',
                   outline: 'none',
                 }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--brand)')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+                onFocus={(e) =>
+                  (e.currentTarget.style.borderColor = 'var(--brand)')
+                }
+                onBlur={(e) =>
+                  (e.currentTarget.style.borderColor = 'var(--border)')
+                }
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
                 tabIndex={-1}
-                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                aria-label={
+                  showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'
+                }
                 className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer p-0 flex items-center"
                 style={{ color: 'var(--text-3)' }}
               >
@@ -133,14 +158,19 @@ export default function Login() {
             type="submit"
             disabled={loading}
             className="w-full py-2.5 rounded-lg text-sm font-semibold text-white border-0 cursor-pointer transition-opacity disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-1"
-            style={{ background: 'linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%)' }}
+            style={{
+              background:
+                'linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%)',
+            }}
           >
             {loading ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
                 Ingresando…
               </>
-            ) : 'Ingresar'}
+            ) : (
+              'Ingresar'
+            )}
           </button>
         </form>
       </div>
