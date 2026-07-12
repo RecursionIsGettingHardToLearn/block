@@ -5,7 +5,12 @@
   "main": "index.js",
   "scripts": {
     "seed": "ts-node seed_massive.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "npm run lint --prefix backend && npm run lint --prefix frontend && npm run lint --prefix chaincode",
+    "format": "prettier --write \"*.ts\" && npm run format --prefix backend && npm run format --prefix frontend && npm run format --prefix chaincode",
+    "format:check": "prettier --check \"*.ts\"",
+    "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend && npm run typecheck --prefix chaincode",
+    "verify": "npm run lint && npm run typecheck"
   },
   "keywords": [],
   "author": "",
