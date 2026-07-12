@@ -1,0 +1,49 @@
+name: CI
+
+# Verifica cada aporte contra los estándares de codificación del proyecto
+# (ver ESTANDARES_CODIFICACION.md). Si esto no pasa, no se despliega.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verificar:
+    name: ${{ matrix.modulo }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        modulo: [backend, frontend, chaincode]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.modulo }}/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: ${{ matrix.modulo }}
+
+      - name: Analisis estatico (ESLint)
+        run: npm run lint
+        working-directory: ${{ matrix.modulo }}
+
+      - name: Comprobacion de tipos
+        run: npm run typecheck
+        working-directory: ${{ matrix.modulo }}
+
+      - name: Pruebas unitarias
+        # Solo el backend tiene bateria de pruebas por ahora.
+        if: matrix.modulo == 'backend'
+        run: npm test
+        working-directory: backend
+
+      - name: Compilar
+        run: npm run build
+        working-directory: ${{ matrix.modulo }}
