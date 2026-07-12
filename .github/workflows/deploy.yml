@@ -22,8 +22,25 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
 
+    env:
+      VM_HOST: ${{ secrets.VM_HOST }}
+
     steps:
+      # Mientras no exista la maquina virtual, el despliegue se OMITE en lugar
+      # de fallar. Asi el repositorio no arrastra un aspa roja permanente por
+      # una infraestructura que todavia no se ha creado.
+      - name: Comprobar si el despliegue esta configurado
+        id: config
+        run: |
+          if [ -z "${VM_HOST}" ]; then
+            echo "listo=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Despliegue omitido: falta configurar los secretos VM_HOST, VM_USER y VM_SSH_KEY. Ver DESPLIEGUE_AZURE.md, seccion 4."
+          else
+            echo "listo=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Desplegar por SSH
+        if: steps.config.outputs.listo == 'true'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VM_HOST }}
