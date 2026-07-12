@@ -12,3 +12,5 @@ node_modules/
 
 claude.md
 .claude/
+# Entorno local del frontend (usar .env.example como plantilla)
+frontend/.env
