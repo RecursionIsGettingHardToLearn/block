@@ -17,9 +17,11 @@ RG="${RG:-rg-block-evoting}"
 LOCATION="${LOCATION:-eastus}"
 VM_NAME="${VM_NAME:-vm-block}"
 VM_SIZE="${VM_SIZE:-Standard_B2ms}"   # 2 vCPU / 8 GB — Fabric levanta 7+ contenedores
+IMAGE="${IMAGE:-Ubuntu2204}"          # para tamaños ARM usar la variante arm64 de la imagen
 ADMIN_USER="${ADMIN_USER:-azureuser}"
 DNS_LABEL="${DNS_LABEL:-block-evoting-$RANDOM}"
 DISK_SIZE="${DISK_SIZE:-64}"          # 30 GB se queda corto con las imágenes de Fabric
+STORAGE_SKU="${STORAGE_SKU:-StandardSSD_LRS}"  # Premium no aporta nada aquí y cuesta el doble
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/block_azure}"
 
 echo "==> Grupo de recursos: $RG ($LOCATION)"
@@ -36,13 +38,14 @@ echo "==> Creando la máquina virtual $VM_NAME ($VM_SIZE)"
 az vm create \
   --resource-group "$RG" \
   --name "$VM_NAME" \
-  --image Ubuntu2204 \
+  --image "$IMAGE" \
   --size "$VM_SIZE" \
   --admin-username "$ADMIN_USER" \
   --ssh-key-values "${SSH_KEY}.pub" \
   --public-ip-sku Standard \
   --public-ip-address-dns-name "$DNS_LABEL" \
   --os-disk-size-gb "$DISK_SIZE" \
+  --storage-sku "$STORAGE_SKU" \
   --output none
 
 # ─── Puertos ────────────────────────────────────────────────────────────────

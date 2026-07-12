@@ -15,12 +15,34 @@ REPO="https://github.com/RecursionIsGettingHardToLearn/block.git"
 APP_DIR="/opt/block"
 USER_NAME="$(whoami)"
 
+# Base de datos: por omisión se levanta PostgreSQL en un contenedor local.
+# Si se pasa DB_HOST por entorno (p. ej. el pooler de Supabase), se usa esa
+# base externa y el contenedor local no se crea: ahorra ~400 MB de RAM, que
+# es lo que permite que la máquina de 4 GB alcance.
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
+DB_USER="${DB_USER:-postgres}"
+DB_NAME="${DB_NAME:-evoting}"
+DB_SSL="${DB_SSL:-false}"
+
 log() { echo -e "\n\033[0;32m==> $1\033[0m"; }
 
 # ─── 1. Paquetes base ───────────────────────────────────────────────────────
 log "Actualizando el sistema"
 sudo apt-get update -qq
 sudo apt-get install -y -qq ca-certificates curl gnupg git jq
+
+# ─── 1b. Swap ───────────────────────────────────────────────────────────────
+# En una máquina de 4 GB, la compilación del frontend con la red Fabric ya
+# corriendo puede quedarse sin memoria. El swap evita el OOM sin costo extra.
+if [ ! -f /swapfile ]; then
+  log "Creando 4 GB de swap"
+  sudo fallocate -l 4G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile > /dev/null
+  sudo swapon /swapfile
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab > /dev/null
+fi
 
 # ─── 2. Docker ──────────────────────────────────────────────────────────────
 log "Instalando Docker"
@@ -73,16 +95,20 @@ cd "$APP_DIR"
 
 # ─── 6. Entorno del backend ─────────────────────────────────────────────────
 log "Generando backend/.env"
-DB_PASS="$(openssl rand -base64 24 | tr -d '/+=')"
+if [ "$DB_HOST" = "localhost" ]; then
+  DB_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=')"
+else
+  : "${DB_PASSWORD:?Con una base externa hay que pasar DB_PASSWORD por entorno}"
+fi
 JWT="$(openssl rand -base64 48 | tr -d '\n')"
 
 cat > backend/.env <<EOF
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=${DB_PASS}
-DB_NAME=evoting
-DB_SSL=false
+DB_HOST=${DB_HOST}
+DB_PORT=${DB_PORT}
+DB_USER=${DB_USER}
+DB_PASSWORD=${DB_PASSWORD}
+DB_NAME=${DB_NAME}
+DB_SSL=${DB_SSL}
 
 JWT_SECRET=${JWT}
 JWT_EXPIRES_IN=8h
@@ -101,13 +127,17 @@ EOF
 chmod 600 backend/.env
 
 # ─── 7. Base de datos ───────────────────────────────────────────────────────
-log "Levantando PostgreSQL"
-POSTGRES_PASSWORD="$DB_PASS" docker compose -f deploy/docker-compose.db.yml up -d
-echo "    Esperando a que la base acepte conexiones..."
-for _ in $(seq 1 30); do
-  docker exec block-postgres pg_isready -U postgres -q && break
-  sleep 2
-done
+if [ "$DB_HOST" = "localhost" ]; then
+  log "Levantando PostgreSQL"
+  POSTGRES_PASSWORD="$DB_PASSWORD" docker compose -f deploy/docker-compose.db.yml up -d
+  echo "    Esperando a que la base acepte conexiones..."
+  for _ in $(seq 1 30); do
+    docker exec block-postgres pg_isready -U postgres -q && break
+    sleep 2
+  done
+else
+  log "Usando base de datos externa: ${DB_HOST} (no se levanta contenedor local)"
+fi
 
 # ─── 8. Red Fabric ──────────────────────────────────────────────────────────
 # setup.sh genera el material criptográfico, levanta los contenedores, crea el

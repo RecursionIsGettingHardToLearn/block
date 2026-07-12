@@ -65,7 +65,7 @@ services:
 
   # ── CouchDB (peer state database) ─────────────────────────────────────────
   couchdb0:
-    image: couchdb:3.2
+    image: couchdb:3.3
     container_name: couchdb0
     environment:
       - COUCHDB_USER=admin
@@ -123,7 +123,7 @@ services:
 
   # ── CouchDB 1 ─────────────────────────────────────────────────────────────
   couchdb1:
-    image: couchdb:3.2
+    image: couchdb:3.3
     container_name: couchdb1
     environment:
       - COUCHDB_USER=admin
