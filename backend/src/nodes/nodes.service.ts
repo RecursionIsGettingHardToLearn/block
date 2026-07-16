@@ -62,6 +62,8 @@ export interface FabricNode {
   hostAlias: string;
   activo: boolean;
   cryptoReady?: boolean;
+  /** Estado REAL del contenedor según Docker, no según la base de datos. */
+  enEjecucion?: boolean;
   prioridad: number;
   creadoEn: Date;
 }
@@ -82,6 +84,9 @@ interface DockerContainerInfo {
   Config?: {
     Env?: string[];
     Labels?: Record<string, string>;
+  };
+  State?: {
+    Running?: boolean;
   };
 }
 
@@ -131,19 +136,106 @@ export class NodesService {
     };
   }
 
-  async findAll(): Promise<FabricNode[]> {
+  /**
+   * Lista los nodos sincronizando el registro con la realidad de Docker.
+   *
+   * 1. Descubre los contenedores `fabric-peer` que están corriendo y registra
+   *    los que no figuren en `nodos_fabric` (sin tocar los ya registrados, de
+   *    modo que el encendido/apagado del administrador se respeta).
+   * 2. Devuelve cada nodo con `enEjecucion`: el estado REAL del contenedor.
+   *    La tabla dejaba de reflejar la realidad cuando la red se levantaba por
+   *    fuera de la interfaz (setup.sh, docker compose) o cuando se borraban
+   *    los registros: los contenedores seguían ahí pero la página decía que
+   *    no había nodos.
+   *
+   * `discovered` permite al controlador reconectar Fabric solo cuando
+   * apareció algo nuevo, en lugar de reconectar en cada refresco.
+   */
+  async findAll(): Promise<{ nodes: FabricNode[]; discovered: number }> {
+    const running = await this.discoverRunningPeers();
+
+    const { rows: existing } = await this.db.query<FabricNodeRow>(
+      `SELECT host_alias FROM nodos_fabric`,
+    );
+    const known = new Set(existing.map((r) => r.host_alias));
+
+    let discovered = 0;
+    for (const containerName of running) {
+      if (!known.has(containerName)) {
+        discovered += await this.registerDiscoveredPeer(containerName);
+      }
+    }
+
     const { rows } = await this.db.query<FabricNodeRow>(
       `SELECT id, nombre, endpoint, host_alias, activo, prioridad, creado_en
        FROM nodos_fabric
        ORDER BY prioridad ASC, creado_en ASC`,
     );
-    const nodes = rows.map((row) => this.map(row));
-    return Promise.all(
-      nodes.map(async (node) => ({
-        ...node,
-        cryptoReady: await this.hasPeerCrypto(node.hostAlias),
+    const nodes = await Promise.all(
+      rows.map(async (row) => ({
+        ...this.map(row),
+        cryptoReady: await this.hasPeerCrypto(row.host_alias),
+        enEjecucion: running.has(row.host_alias),
       })),
     );
+    return { nodes, discovered };
+  }
+
+  /** Nombres de los contenedores de peers de Fabric que están corriendo. */
+  private async discoverRunningPeers(): Promise<Set<string>> {
+    try {
+      const { stdout } = await execAsync(
+        'docker ps --format "{{.Names}}\t{{.Image}}"',
+        { timeout: 10_000 },
+      );
+      const names = stdout
+        .split('\n')
+        .map((line) => line.split('\t'))
+        .filter(([, image]) => image?.includes('fabric-peer'))
+        .map(([name]) => name.trim());
+      return new Set(names);
+    } catch (err: unknown) {
+      // Sin Docker no hay descubrimiento, pero la lista registrada sigue
+      // funcionando: se degrada, no se rompe.
+      this.logger.warn(
+        `No se pudo consultar Docker: ${getExecErrorSummary(err)}`,
+      );
+      return new Set();
+    }
+  }
+
+  /**
+   * Registra un peer descubierto en Docker que no figura en la base. El
+   * endpoint sale de la variable CORE_PEER_ADDRESS del propio contenedor.
+   * Devuelve cuántas filas insertó (0 si ya existía por nombre o si el
+   * contenedor no expone su dirección).
+   */
+  private async registerDiscoveredPeer(containerName: string): Promise<number> {
+    const info = await this.inspectContainer(containerName);
+    const address = info?.Config?.Env?.find((e) =>
+      e.startsWith('CORE_PEER_ADDRESS='),
+    );
+    const port = address?.split('=')[1]?.split(':')[1];
+    if (!port) {
+      this.logger.warn(
+        `${containerName} corre pero no expone CORE_PEER_ADDRESS; no se registra`,
+      );
+      return 0;
+    }
+    const nombre = containerName.split('.')[0];
+    const { rows } = await this.db.query<{ id: string }>(
+      `INSERT INTO nodos_fabric (nombre, endpoint, host_alias, activo)
+       VALUES ($1, $2, $3, true)
+       ON CONFLICT (nombre) DO NOTHING
+       RETURNING id`,
+      [nombre, `localhost:${port}`, containerName],
+    );
+    if (rows.length) {
+      this.logger.log(
+        `Peer descubierto en Docker y registrado: ${containerName} (localhost:${port})`,
+      );
+    }
+    return rows.length;
   }
 
   async findFirstActive(): Promise<{
@@ -215,6 +307,8 @@ export class NodesService {
       lines.push(
         `[ERROR] El peer no respondió a docker ${action}; el estado en la base se mantiene en ${current.activo ? 'ACTIVO' : 'INACTIVO'}.`,
       );
+      const info = await this.inspectContainer(peerCtr);
+      current.enEjecucion = info?.State?.Running ?? false;
       return { node: current, logs: lines.join('\n') };
     }
 
@@ -226,7 +320,9 @@ export class NodesService {
     lines.push(
       `[INFO] Estado en DB → ${rows[0].activo ? 'ACTIVO' : 'INACTIVO'}`,
     );
-    return { node: this.map(rows[0]), logs: lines.join('\n') };
+    const node = this.map(rows[0]);
+    node.enEjecucion = action === 'start';
+    return { node, logs: lines.join('\n') };
   }
 
   async remove(id: string): Promise<void> {

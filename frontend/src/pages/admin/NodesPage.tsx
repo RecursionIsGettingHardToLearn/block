@@ -22,6 +22,8 @@ interface FabricNode {
   endpoint: string;
   hostAlias: string;
   activo: boolean;
+  /** Estado real del contenedor según Docker (lo reporta el backend). */
+  enEjecucion?: boolean;
   prioridad: number;
   creadoEn: string;
 }
@@ -160,7 +162,7 @@ export default function NodesPage() {
     }
   }
 
-  const activeNodes = nodes.filter((node) => node.activo);
+  const activeNodes = nodes.filter((node) => node.enEjecucion ?? node.activo);
 
   return (
     <div className="flex flex-col gap-6 animate-slide-up max-w-4xl">
@@ -455,7 +457,7 @@ export default function NodesPage() {
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      {node.activo ? (
+                      {(node.enEjecucion ?? node.activo) ? (
                         <Wifi
                           size={14}
                           style={{ color: 'var(--status-active)' }}
@@ -466,12 +468,15 @@ export default function NodesPage() {
                       <span
                         className="text-xs font-semibold"
                         style={{
-                          color: node.activo
-                            ? 'var(--status-active)'
-                            : 'var(--text-3)',
+                          color:
+                            (node.enEjecucion ?? node.activo)
+                              ? 'var(--status-active)'
+                              : 'var(--text-3)',
                         }}
                       >
-                        {node.activo ? 'Activo' : 'Inactivo'}
+                        {(node.enEjecucion ?? node.activo)
+                          ? 'Activo'
+                          : 'Detenido'}
                       </span>
                     </div>
                   </td>

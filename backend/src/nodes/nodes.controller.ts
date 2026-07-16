@@ -29,8 +29,14 @@ export class NodesController {
   ) {}
 
   @Get()
-  findAll() {
-    return this.nodesService.findAll();
+  async findAll() {
+    const { nodes, discovered } = await this.nodesService.findAll();
+    // Si el descubrimiento registró peers nuevos (p. ej. la red se levantó
+    // con setup.sh y la tabla estaba vacía), el backend se reconecta solo.
+    if (discovered > 0) {
+      await this.fabricService.reconnect();
+    }
+    return nodes;
   }
 
   @Get('free-port')
