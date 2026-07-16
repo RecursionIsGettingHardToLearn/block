@@ -20,7 +20,7 @@ class EndAfterStart implements ValidatorConstraintInterface {
     return obj.endDate > obj.startDate;
   }
   defaultMessage() {
-    return 'end_date must be after start_date';
+    return 'La fecha de fin debe ser posterior a la fecha de inicio';
   }
 }
 

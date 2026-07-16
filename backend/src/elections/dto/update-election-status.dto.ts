@@ -4,7 +4,7 @@ import type { ElectionStatus } from '../elections.service';
 export class UpdateElectionStatusDto {
   @IsEnum(['BORRADOR', 'PROGRAMADA', 'ACTIVA', 'CERRADA', 'ESCRUTADA'], {
     message:
-      'status must be one of: BORRADOR, PROGRAMADA, ACTIVA, CERRADA, ESCRUTADA',
+      'El estado debe ser uno de: BORRADOR, PROGRAMADA, ACTIVA, CERRADA o ESCRUTADA',
   })
   status: ElectionStatus;
 }
