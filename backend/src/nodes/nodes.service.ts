@@ -1,6 +1,7 @@
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { exec } from 'child_process';
@@ -76,8 +77,18 @@ interface FabricNodeRow {
   creado_en: Date;
 }
 
+/** Campos de `docker inspect` que necesita este servicio. */
+interface DockerContainerInfo {
+  Config?: {
+    Env?: string[];
+    Labels?: Record<string, string>;
+  };
+}
+
 @Injectable()
 export class NodesService {
+  private readonly logger = new Logger(NodesService.name);
+
   constructor(private readonly db: DatabaseService) {}
 
   async getNextFreePort(): Promise<{
@@ -175,20 +186,36 @@ export class NodesService {
     const current = this.map(cur[0]);
     const action = current.activo ? 'stop' : 'start';
     const peerCtr = current.hostAlias;
-    const couchCtr = `couchdb-${current.nombre}`;
+    const couchCtr = await this.resolveCouchContainer(peerCtr, current.nombre);
     const lines: string[] = [
       `[INFO] Ejecutando: docker ${action} en ${current.nombre}`,
     ];
 
-    for (const ctr of [peerCtr, couchCtr]) {
+    // Al encender, el CouchDB va primero (el peer lo necesita para arrancar);
+    // al apagar, el peer va primero para que no pierda su base bajo los pies.
+    const order =
+      action === 'start' ? [couchCtr, peerCtr] : [peerCtr, couchCtr];
+
+    let peerOk = false;
+    for (const ctr of order) {
       try {
         const { stdout } = await execAsync(`docker ${action} ${ctr}`, {
           timeout: 30_000,
         });
         lines.push(`[OK]   ${ctr}: ${stdout.trim() || 'done'}`);
+        if (ctr === peerCtr) peerOk = true;
       } catch (err: unknown) {
         lines.push(`[WARN] ${ctr}: ${getExecErrorSummary(err)}`);
       }
+    }
+
+    // El estado en la base solo cambia si el peer obedeció de verdad. Antes se
+    // volteaba siempre, y la tabla mostraba ACTIVO con el contenedor caído.
+    if (!peerOk) {
+      lines.push(
+        `[ERROR] El peer no respondió a docker ${action}; el estado en la base se mantiene en ${current.activo ? 'ACTIVO' : 'INACTIVO'}.`,
+      );
+      return { node: current, logs: lines.join('\n') };
     }
 
     const { rows } = await this.db.query<FabricNodeRow>(
@@ -203,7 +230,89 @@ export class NodesService {
   }
 
   async remove(id: string): Promise<void> {
+    const { rows } = await this.db.query<FabricNodeRow>(
+      `SELECT * FROM nodos_fabric WHERE id = $1`,
+      [id],
+    );
+    // Borrar un id inexistente sigue siendo un no-op, como hasta ahora.
+    if (rows.length) {
+      await this.cleanupContainers(this.map(rows[0]));
+    }
     await this.db.query(`DELETE FROM nodos_fabric WHERE id = $1`, [id]);
+  }
+
+  /**
+   * Elimina los contenedores de un peer desplegado dinámicamente al borrarlo
+   * del registro. Antes, borrar la fila los dejaba corriendo huérfanos.
+   *
+   * Los peers base del docker-compose NO se tocan: llevan la etiqueta
+   * `com.docker.compose.project` y son responsabilidad del compose, no de este
+   * servicio. Borrarlos del registro solo los des-registra.
+   */
+  private async cleanupContainers(node: FabricNode): Promise<void> {
+    const info = await this.inspectContainer(node.hostAlias);
+    if (!info) return; // el contenedor ya no existe: nada que limpiar
+
+    if (info.Config?.Labels?.['com.docker.compose.project']) {
+      this.logger.log(
+        `${node.hostAlias} pertenece al docker-compose; se des-registra sin eliminar sus contenedores`,
+      );
+      return;
+    }
+
+    // Resolver el CouchDB ANTES de eliminar el peer: el nombre sale del
+    // entorno del propio contenedor del peer.
+    const couchCtr = await this.resolveCouchContainer(
+      node.hostAlias,
+      node.nombre,
+    );
+    for (const ctr of [node.hostAlias, couchCtr]) {
+      try {
+        // -f detiene y elimina; -v descarta sus volúmenes anónimos.
+        await execAsync(`docker rm -fv ${ctr}`, { timeout: 30_000 });
+        this.logger.log(`Contenedor ${ctr} eliminado junto con el nodo`);
+      } catch (err: unknown) {
+        this.logger.warn(
+          `No se pudo eliminar ${ctr}: ${getExecErrorSummary(err)}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Devuelve el nombre real del contenedor CouchDB de un peer, leyéndolo de la
+   * variable CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS del propio
+   * contenedor: en la red de Docker, el host de esa dirección ES el nombre del
+   * contenedor. Así funciona igual para los peers base del compose (couchdb0,
+   * couchdb1) y para los desplegados dinámicamente (couchdb-<nombre>), que era
+   * el desajuste que hacía fallar el encendido de peer0 y peer1.
+   */
+  private async resolveCouchContainer(
+    peerCtr: string,
+    nombre: string,
+  ): Promise<string> {
+    const info = await this.inspectContainer(peerCtr);
+    const address = info?.Config?.Env?.find((e) =>
+      e.startsWith('CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS='),
+    );
+    const host = address?.split('=')[1]?.split(':')[0];
+    // Sin contenedor que consultar, se cae a la convención de los dinámicos.
+    return host || `couchdb-${nombre}`;
+  }
+
+  /** `docker inspect` tipado; `null` si el contenedor no existe. */
+  private async inspectContainer(
+    name: string,
+  ): Promise<DockerContainerInfo | null> {
+    try {
+      const { stdout } = await execAsync(`docker inspect ${name}`, {
+        timeout: 10_000,
+      });
+      const parsed = JSON.parse(stdout) as DockerContainerInfo[];
+      return parsed[0] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async deployPeer(
