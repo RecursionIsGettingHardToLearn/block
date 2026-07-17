@@ -1,15 +1,11 @@
 import { Client } from 'pg';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { DB, describirConexion } from './db_config';
 
 async function seed() {
-  const client = new Client({
-    host: 'localhost',
-    port: 5432,
-    user: 'postgres',
-    password: '7814',
-    database: 'evoting_db',
-  });
+  console.log(`Conexión → ${describirConexion()}`);
+  const client = new Client(DB);
 
   try {
     await client.connect();
@@ -25,15 +21,16 @@ async function seed() {
     await client.query('DELETE FROM candidatos');
     await client.query('DELETE FROM elecciones');
     await client.query("DELETE FROM usuarios WHERE identificador != 'admin'");
-    await client.query('DELETE FROM organizaciones WHERE id = $1', [ORG_ID]);
     console.log('Tablas limpiadas.');
 
-    // 1.5 Crear organización
+    // 1.5 Asegurar la organización (el admin conservado la referencia con FK
+    // RESTRICT, así que no puede borrarse; si ya existe, no se toca)
     await client.query(
-      `INSERT INTO organizaciones (id, nombre, slug) VALUES ($1, $2, $3)`,
+      `INSERT INTO organizaciones (id, nombre, slug) VALUES ($1, $2, $3)
+       ON CONFLICT DO NOTHING`,
       [ORG_ID, 'UAGRM', 'uagrm'],
     );
-    console.log('Organización creada.');
+    console.log('Organización asegurada.');
 
     // 2. Crear 100 Usuarios
     console.log('Generando 100 usuarios...');

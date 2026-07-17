@@ -1,15 +1,12 @@
 import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
+import { DB, describirConexion } from './db_config';
 
 async function run() {
-  const client = new Client({
-    host: 'localhost',
-    port: 5432,
-    user: 'postgres',
-    password: 'muerte', // Tu contraseña real
-    database: 'postgres',
-  });
+  console.log(`Conexión → ${describirConexion()}`);
+  // Para crear la base hay que conectarse primero a la de mantenimiento.
+  const client = new Client({ ...DB, database: 'postgres' });
 
   try {
     await client.connect();
@@ -17,29 +14,23 @@ async function run() {
 
     // Check if evoting_db exists
     const res = await client.query(
-      "SELECT 1 FROM pg_database WHERE datname = 'evoting_db'",
+      'SELECT 1 FROM pg_database WHERE datname = $1',
+      [DB.database],
     );
     if (res.rowCount === 0) {
-      console.log('Creating database evoting_db...');
-      await client.query('CREATE DATABASE evoting_db');
+      console.log(`Creando la base ${DB.database}...`);
+      await client.query(`CREATE DATABASE "${DB.database}"`);
     } else {
-      console.log('Database evoting_db already exists');
+      console.log(`La base ${DB.database} ya existe`);
     }
     await client.end();
 
-    // Connect to evoting_db
-    const evotingClient = new Client({
-      host: 'localhost',
-      port: 5432,
-      user: 'postgres',
-      password: 'muerte',
-      database: 'evoting_db',
-    });
+    const evotingClient = new Client(DB);
     await evotingClient.connect();
-    console.log('Connected to evoting_db');
+    console.log(`Conectado a ${DB.database}`);
 
     const sql = fs.readFileSync(path.join(__dirname, 'database.sql'), 'utf8');
-    console.log('Running database.sql...');
+    console.log('Aplicando database.sql (borra y recrea TODAS las tablas)...');
     await evotingClient.query(sql);
     console.log('Database setup complete');
     await evotingClient.end();

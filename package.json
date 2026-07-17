@@ -10,7 +10,9 @@
     "format": "prettier --write \"*.ts\" && npm run format --prefix backend && npm run format --prefix frontend && npm run format --prefix chaincode",
     "format:check": "prettier --check \"*.ts\"",
     "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend && npm run typecheck --prefix chaincode",
-    "verify": "npm run lint && npm run typecheck"
+    "verify": "npm run lint && npm run typecheck",
+    "db:reset": "ts-node setup_db.ts && ts-node db_migrate.ts && ts-node seed_massive.ts",
+    "db:migrate": "ts-node db_migrate.ts"
   },
   "keywords": [],
   "author": "",
