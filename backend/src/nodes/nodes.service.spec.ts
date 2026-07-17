@@ -87,6 +87,35 @@ describe('NodesService — guarda del último peer activo', () => {
     expect(deletes).toHaveLength(1);
   }, 20_000);
 
+  it('startDeploy responde al instante y rechaza un segundo despliegue simultáneo', () => {
+    // El despliegue real nunca corre: se simula uno que no termina.
+    jest
+      .spyOn(service, 'deployPeer')
+      .mockReturnValue(new Promise(() => undefined));
+
+    const job = service.startDeploy({ nombre: 'peer9' });
+    expect(job.estado).toBe('EN_PROGRESO');
+    expect(job.peerName).toBe('peer9');
+
+    expect(() => service.startDeploy({ nombre: 'peer8' })).toThrow(
+      ConflictException,
+    );
+    expect(service.getDeployments()[0].id).toBe(job.id);
+  });
+
+  it('el trabajo termina FALLIDO con el error en los logs si el despliegue revienta', async () => {
+    jest
+      .spyOn(service, 'deployPeer')
+      .mockRejectedValue(new Error('docker no responde'));
+
+    const job = service.startDeploy({ nombre: 'peer9' });
+    await new Promise((r) => setTimeout(r, 10)); // deja resolver la promesa
+
+    expect(job.estado).toBe('FALLIDO');
+    expect(job.error).toBe('docker no responde');
+    expect(job.logs.at(-1)).toContain('docker no responde');
+  });
+
   it('des-registrar un peer INACTIVO no consulta la guarda', async () => {
     mockDb.query
       .mockResolvedValueOnce({ rows: [nodeRow(false)] })

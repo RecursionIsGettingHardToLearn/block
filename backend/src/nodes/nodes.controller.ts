@@ -60,11 +60,18 @@ export class NodesController {
   }
 
   @Post('deploy')
-  @HttpCode(HttpStatus.CREATED)
-  async deploy(@Body() dto: DeployNodeDto) {
-    const result = await this.nodesService.deployPeer(dto);
-    await this.fabricService.reconnect();
-    return result;
+  @HttpCode(HttpStatus.ACCEPTED)
+  deploy(@Body() dto: DeployNodeDto) {
+    // Responde al instante con el trabajo; el despliegue corre en segundo
+    // plano y el progreso se consulta en GET /nodes/deployments. La
+    // reconexión a Fabric ocurre sola cuando el peer nuevo aparece en el
+    // descubrimiento del listado.
+    return this.nodesService.startDeploy(dto);
+  }
+
+  @Get('deployments')
+  getDeployments() {
+    return this.nodesService.getDeployments();
   }
 
   @Delete(':id')

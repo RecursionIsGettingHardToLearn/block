@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { exec } from 'child_process';
+import { randomUUID } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import * as net from 'net';
 import * as os from 'os';
@@ -95,11 +96,94 @@ interface DockerContainerInfo {
   };
 }
 
+/** Un despliegue de peer ejecutándose (o terminado) en segundo plano. */
+export interface DeployJob {
+  id: string;
+  peerName: string;
+  estado: 'EN_PROGRESO' | 'COMPLETADO' | 'FALLIDO';
+  logs: string[];
+  error?: string;
+  iniciadoEn: Date;
+  finalizadoEn?: Date;
+}
+
 @Injectable()
 export class NodesService {
   private readonly logger = new Logger(NodesService.name);
 
+  /**
+   * Trabajos de despliegue en memoria. Un despliegue tarda más de un minuto
+   * (certificados, dos contenedores, canal, chaincode): atarlo a una petición
+   * HTTP obligaba a quedarse mirando la página. Aquí el POST responde al
+   * instante con el trabajo y la interfaz consulta el progreso cuando quiere;
+   * navegar a otra página no pierde nada.
+   *
+   * Viven en memoria a propósito: si el backend se reinicia a mitad de un
+   * despliegue, el proceso muere de todas formas y el historial de logs con
+   * él — pero los certificados huérfanos que eso deje los detecta y limpia
+   * la guarda del paso 0 en el siguiente intento.
+   */
+  private readonly deployJobs = new Map<string, DeployJob>();
+
   constructor(private readonly db: DatabaseService) {}
+
+  /**
+   * Lanza el despliegue en segundo plano y devuelve el trabajo de inmediato.
+   * Solo se admite un despliegue a la vez: los puertos libres se calculan al
+   * inicio, y dos despliegues simultáneos podrían elegir los mismos.
+   */
+  startDeploy(dto: DeployNodeDto): DeployJob {
+    const enCurso = [...this.deployJobs.values()].find(
+      (j) => j.estado === 'EN_PROGRESO',
+    );
+    if (enCurso) {
+      throw new ConflictException(
+        `Ya hay un despliegue en curso (${enCurso.peerName}). Espera a que termine.`,
+      );
+    }
+
+    const job: DeployJob = {
+      id: randomUUID(),
+      peerName: dto.nombre,
+      estado: 'EN_PROGRESO',
+      logs: [],
+      iniciadoEn: new Date(),
+    };
+    this.deployJobs.set(job.id, job);
+    this.pruneJobs();
+
+    // Se dispara sin await: la petición HTTP ya respondió con el trabajo.
+    void this.deployPeer(dto, (msg) => job.logs.push(msg))
+      .then(() => {
+        job.estado = 'COMPLETADO';
+        job.finalizadoEn = new Date();
+      })
+      .catch((err: unknown) => {
+        job.estado = 'FALLIDO';
+        job.error = getErrorMessage(err);
+        job.finalizadoEn = new Date();
+        job.logs.push(`[ERROR] ${job.error}`);
+      });
+
+    return job;
+  }
+
+  /** Trabajos recientes, el más nuevo primero. */
+  getDeployments(): DeployJob[] {
+    return [...this.deployJobs.values()].sort(
+      (a, b) => b.iniciadoEn.getTime() - a.iniciadoEn.getTime(),
+    );
+  }
+
+  /** Conserva solo los últimos trabajos terminados: son memoria, no historia. */
+  private pruneJobs(): void {
+    const terminados = this.getDeployments().filter(
+      (j) => j.estado !== 'EN_PROGRESO',
+    );
+    for (const viejo of terminados.slice(5)) {
+      this.deployJobs.delete(viejo.id);
+    }
+  }
 
   async getNextFreePort(): Promise<{
     port: number;
@@ -493,6 +577,7 @@ export class NodesService {
 
   async deployPeer(
     dto: DeployNodeDto,
+    onLog?: (msg: string) => void,
   ): Promise<{ node: FabricNode; logs: string }> {
     const peerName = dto.nombre;
     const dockerPorts = await getDockerAllocatedPorts();
@@ -527,7 +612,10 @@ export class NodesService {
     const adminMsp = `${cOrg}/users/Admin@${ORG}/msp`;
 
     const logs: string[] = [];
-    const log = (m: string) => logs.push(m);
+    const log = (m: string) => {
+      logs.push(m);
+      onLog?.(m);
+    };
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
     const run = async (

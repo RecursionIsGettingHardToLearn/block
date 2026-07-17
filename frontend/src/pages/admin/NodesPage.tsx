@@ -42,6 +42,18 @@ export default function NodesPage() {
   const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deployLogs, setDeployLogs] = useState<string | null>(null);
+
+  // Trabajo de despliegue en curso. Vive en el componente pero se rehidrata
+  // desde el backend al montar, así que navegar a otra página y volver no
+  // pierde el progreso: el despliegue corre en el servidor, no aquí.
+  interface DeployJob {
+    id: string;
+    peerName: string;
+    estado: 'EN_PROGRESO' | 'COMPLETADO' | 'FALLIDO';
+    logs: string[];
+    error?: string;
+  }
+  const [deployJob, setDeployJob] = useState<DeployJob | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [actionLogs, setActionLogs] = useState<{
@@ -66,6 +78,38 @@ export default function NodesPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Rehidratar el despliegue en curso al entrar a la página: si el docente
+  // lanzó uno y se movió de pestaña, al volver lo encuentra donde iba.
+  useEffect(() => {
+    api
+      .get<DeployJob[]>('/nodes/deployments')
+      .then(({ data }) => {
+        const vivo =
+          data.find((j) => j.estado === 'EN_PROGRESO') ?? data[0] ?? null;
+        if (vivo) setDeployJob(vivo);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  // Mientras haya un despliegue en progreso, consultar su avance cada 2 s.
+  useEffect(() => {
+    if (deployJob?.estado !== 'EN_PROGRESO') return;
+    const t = setInterval(() => {
+      api
+        .get<DeployJob[]>('/nodes/deployments')
+        .then(({ data }) => {
+          const actualizado = data.find((j) => j.id === deployJob.id);
+          if (!actualizado) return;
+          setDeployJob(actualizado);
+          if (actualizado.estado !== 'EN_PROGRESO') {
+            void load(); // terminó: refrescar la tabla de nodos
+          }
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => clearInterval(t);
+  }, [deployJob, load]);
 
   async function openAddForm() {
     setShowDeploy(false);
@@ -115,20 +159,16 @@ export default function NodesPage() {
     setError(null);
     setDeployLogs(null);
     try {
-      const { data } = await api.post<{ node: FabricNode; logs: string }>(
-        '/nodes/deploy',
-        { nombre: deplForm.nombre },
-      );
-      setDeployLogs(data.logs);
-      setShowLogs(true);
+      // El backend responde al instante con el trabajo; el despliegue sigue
+      // en segundo plano y el polling lo va actualizando.
+      const { data } = await api.post<DeployJob>('/nodes/deploy', {
+        nombre: deplForm.nombre,
+      });
+      setDeployJob(data);
       setDeplForm(emptyDeplForm);
       setShowDeploy(false);
-      await load();
     } catch (e: unknown) {
-      const msg = getApiErrorMessage(e, 'Error en deploy');
-      setError(msg);
-      setDeployLogs(msg);
-      setShowLogs(true);
+      setError(getApiErrorMessage(e, 'Error al iniciar el despliegue'));
     } finally {
       setDeploying(false);
     }
@@ -416,6 +456,52 @@ export default function NodesPage() {
           show={showActionLogs}
           onToggle={() => setShowActionLogs((v) => !v)}
         />
+      )}
+
+      {/* ── Progreso del despliegue en segundo plano ── */}
+      {deployJob && (
+        <div
+          className="mb-4 rounded-2xl p-4"
+          style={{
+            border: '1px solid var(--border)',
+            background: 'var(--surface-2)',
+          }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              {deployJob.estado === 'EN_PROGRESO' && (
+                <Loader2
+                  size={16}
+                  className="animate-spin"
+                  style={{ color: 'var(--brand)' }}
+                />
+              )}
+              <span className="text-sm font-semibold">
+                {deployJob.estado === 'EN_PROGRESO' &&
+                  `Desplegando ${deployJob.peerName}… (puedes navegar a otra página)`}
+                {deployJob.estado === 'COMPLETADO' &&
+                  `✅ ${deployJob.peerName} desplegado correctamente`}
+                {deployJob.estado === 'FALLIDO' &&
+                  `❌ Falló el despliegue de ${deployJob.peerName}`}
+              </span>
+            </div>
+            {deployJob.estado !== 'EN_PROGRESO' && (
+              <button
+                onClick={() => setDeployJob(null)}
+                className="text-xs cursor-pointer border-0 bg-transparent"
+                style={{ color: 'var(--text-3)' }}
+              >
+                Cerrar
+              </button>
+            )}
+          </div>
+          <pre
+            className="text-[11px] p-3 rounded-lg overflow-auto max-h-48 whitespace-pre-wrap"
+            style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}
+          >
+            {deployJob.logs.length ? deployJob.logs.join('\n') : 'Iniciando…'}
+          </pre>
+        </div>
       )}
 
       {/* ── Tabla de nodos ── */}
