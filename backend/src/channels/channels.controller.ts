@@ -52,10 +52,12 @@ export class ChannelsController {
   }
 
   @Post(':channelName/chaincode')
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRADOR')
   deployChaincode(@Param('channelName') channelName: string) {
-    return this.channelsService.deployChaincode(channelName);
+    // Responde al instante con el trabajo; el despliegue corre en segundo
+    // plano y su avance sale en GET /channels/creations junto a los demás.
+    return this.channelsService.startDeployChaincode(channelName);
   }
 }

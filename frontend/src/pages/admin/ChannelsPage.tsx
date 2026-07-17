@@ -50,6 +50,7 @@ export default function ChannelsPage() {
   // entrar, así que navegar a otra página no pierde el progreso.
   interface ChannelJob {
     id: string;
+    tipo: 'CREAR_CANAL' | 'DESPLEGAR_CHAINCODE';
     channelName: string;
     estado: 'EN_PROGRESO' | 'COMPLETADO' | 'FALLIDO';
     logs: string[];
@@ -171,19 +172,14 @@ export default function ChannelsPage() {
     setBusyAction(`cc:${channelName}`);
     setError(null);
     try {
-      const { data } = await api.post<{ logs: string }>(
+      // El backend responde al instante; el despliegue corre en segundo plano
+      // y el panel de progreso lo va actualizando (mismo que el de creación).
+      const { data } = await api.post<ChannelJob>(
         `/channels/${channelName}/chaincode`,
       );
-      setLogsTitle(`Chaincode: ${channelName}`);
-      setLogs(data.logs);
-      setShowLogs(true);
-      await load();
+      setCreateJob(data);
     } catch (e: unknown) {
-      const msg = getApiErrorMessage(e, 'Error al desplegar chaincode');
-      setError(msg);
-      setLogsTitle(`Error chaincode: ${channelName}`);
-      setLogs(msg);
-      setShowLogs(true);
+      setError(getApiErrorMessage(e, 'Error al iniciar el despliegue'));
     } finally {
       setBusyAction(null);
     }
@@ -444,12 +440,22 @@ export default function ChannelsPage() {
                 />
               )}
               <span className="text-sm font-semibold">
-                {createJob.estado === 'EN_PROGRESO' &&
-                  `Creando el canal ${createJob.channelName}… (puedes navegar a otra página)`}
-                {createJob.estado === 'COMPLETADO' &&
-                  `✅ Canal ${createJob.channelName} creado correctamente`}
-                {createJob.estado === 'FALLIDO' &&
-                  `❌ Falló la creación del canal ${createJob.channelName}`}
+                {(() => {
+                  const cc = createJob.tipo === 'DESPLEGAR_CHAINCODE';
+                  const acc = cc
+                    ? 'Desplegando chaincode en'
+                    : 'Creando el canal';
+                  const okv = cc
+                    ? `✅ Chaincode desplegado en ${createJob.channelName}`
+                    : `✅ Canal ${createJob.channelName} creado correctamente`;
+                  const fail = cc
+                    ? `❌ Falló el despliegue de chaincode en ${createJob.channelName}`
+                    : `❌ Falló la creación del canal ${createJob.channelName}`;
+                  if (createJob.estado === 'EN_PROGRESO')
+                    return `${acc} ${createJob.channelName}… (puedes navegar a otra página)`;
+                  if (createJob.estado === 'COMPLETADO') return okv;
+                  return fail;
+                })()}
               </span>
             </div>
             {createJob.estado !== 'EN_PROGRESO' && (

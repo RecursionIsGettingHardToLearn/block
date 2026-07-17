@@ -49,4 +49,20 @@ describe('ChannelsService — creación de canal en segundo plano', () => {
     expect(job.error).toBe('el orderer no responde');
     expect(job.logs.at(-1)).toContain('el orderer no responde');
   });
+
+  it('startDeployChaincode corre en segundo plano y comparte el candado con crear', () => {
+    jest
+      .spyOn(service, 'deployChaincode')
+      .mockReturnValue(new Promise(() => undefined));
+
+    const job = service.startDeployChaincode('canal-x');
+    expect(job.tipo).toBe('DESPLEGAR_CHAINCODE');
+    expect(job.estado).toBe('EN_PROGRESO');
+
+    // Una operación de canal a la vez: crear se rechaza mientras el chaincode
+    // se despliega, porque ambas usan el contenedor cli.
+    expect(() => service.startCreate({ nombre: 'canal-y' })).toThrow(
+      ConflictException,
+    );
+  });
 });

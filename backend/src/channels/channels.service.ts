@@ -59,9 +59,10 @@ interface FabricChannelRow {
   creado_en: Date;
 }
 
-/** Una creación de canal ejecutándose (o terminada) en segundo plano. */
+/** Operación lenta de canal ejecutándose (o terminada) en segundo plano. */
 export interface ChannelJob {
   id: string;
+  tipo: 'CREAR_CANAL' | 'DESPLEGAR_CHAINCODE';
   channelName: string;
   estado: 'EN_PROGRESO' | 'COMPLETADO' | 'FALLIDO';
   logs: string[];
@@ -93,17 +94,11 @@ export class ChannelsService {
    * y sus artefactos de canal.
    */
   startCreate(dto: CreateChannelDto): ChannelJob {
-    const enCurso = [...this.channelJobs.values()].find(
-      (j) => j.estado === 'EN_PROGRESO',
-    );
-    if (enCurso) {
-      throw new ConflictException(
-        `Ya hay una creación de canal en curso (${enCurso.channelName}). Espera a que termine.`,
-      );
-    }
+    this.assertNoJobRunning();
 
     const job: ChannelJob = {
       id: randomUUID(),
+      tipo: 'CREAR_CANAL',
       channelName: dto.nombre,
       estado: 'EN_PROGRESO',
       logs: [],
@@ -125,6 +120,56 @@ export class ChannelsService {
       });
 
     return job;
+  }
+
+  /**
+   * Lanza el despliegue de chaincode en segundo plano y devuelve el trabajo.
+   * Igual que crear un canal, usa el contenedor cli para una secuencia larga
+   * (package, install, approve, commit): una operación de canal a la vez.
+   */
+  startDeployChaincode(channelName: string): ChannelJob {
+    this.assertNoJobRunning();
+
+    const job: ChannelJob = {
+      id: randomUUID(),
+      tipo: 'DESPLEGAR_CHAINCODE',
+      channelName,
+      estado: 'EN_PROGRESO',
+      logs: [],
+      iniciadoEn: new Date(),
+    };
+    this.channelJobs.set(job.id, job);
+    this.pruneJobs();
+
+    void this.deployChaincode(channelName, (msg) => job.logs.push(msg))
+      .then(() => {
+        job.estado = 'COMPLETADO';
+        job.finalizadoEn = new Date();
+      })
+      .catch((err: unknown) => {
+        job.estado = 'FALLIDO';
+        job.error = getErrorMessage(err);
+        job.finalizadoEn = new Date();
+        job.logs.push(`[ERROR] ${job.error}`);
+      });
+
+    return job;
+  }
+
+  /** Las operaciones de canal comparten el cli: solo una a la vez. */
+  private assertNoJobRunning(): void {
+    const enCurso = [...this.channelJobs.values()].find(
+      (j) => j.estado === 'EN_PROGRESO',
+    );
+    if (enCurso) {
+      const que =
+        enCurso.tipo === 'CREAR_CANAL'
+          ? 'una creación de canal'
+          : 'un despliegue de chaincode';
+      throw new ConflictException(
+        `Ya hay ${que} en curso (${enCurso.channelName}). Espera a que termine.`,
+      );
+    }
   }
 
   /** Trabajos recientes, el más nuevo primero. */
@@ -343,10 +388,16 @@ export class ChannelsService {
     return { logs: logs.join('\n') };
   }
 
-  async deployChaincode(channelName: string): Promise<{ logs: string }> {
+  async deployChaincode(
+    channelName: string,
+    onLog?: (msg: string) => void,
+  ): Promise<{ logs: string }> {
     await this.assertChannelExists(channelName);
     const logs: string[] = [];
-    await this.deployChaincodeToChannel(channelName, (msg) => logs.push(msg));
+    await this.deployChaincodeToChannel(channelName, (msg) => {
+      logs.push(msg);
+      onLog?.(msg);
+    });
     return { logs: logs.join('\n') };
   }
 
