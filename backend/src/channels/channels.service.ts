@@ -240,33 +240,44 @@ export class ChannelsService {
     await this.ensureChannelBlock(channelName, log);
     await sleep(3000);
 
-    const activeNodes = await this.getActiveNodes();
-    if (activeNodes.length === 0) {
-      throw new BadRequestException('No hay peers activos para unir al canal');
-    }
-
-    const joinedNodes: FabricNodeRow[] = [];
-    for (const node of activeNodes) {
-      try {
-        await this.joinPeerToChannel(channelName, node, log);
-        joinedNodes.push(node);
-      } catch (err) {
-        log(`[WARN] ${node.nombre} omitido: ${this.errorMessage(err)}`);
-      }
-    }
-
-    if (joinedNodes.length === 0) {
-      throw new BadRequestException(
-        'No se pudo unir ningún peer al canal. Verifica que los peers activos tengan certificados TLS y estén levantados.',
+    if (dto.unirPeers === false) {
+      // El canal ya existe en el orderer: unirse es una decisión por-peer que
+      // puede tomarse después. El chaincode queda pendiente porque necesita
+      // al menos un peer unido que lo respalde.
+      log(
+        '[INFO] Canal creado sin unir peers. Únelos uno a uno con «Unir» y despliega el chaincode cuando haya al menos uno.',
       );
+    } else {
+      const activeNodes = await this.getActiveNodes();
+      if (activeNodes.length === 0) {
+        throw new BadRequestException(
+          'No hay peers activos para unir al canal',
+        );
+      }
+
+      const joinedNodes: FabricNodeRow[] = [];
+      for (const node of activeNodes) {
+        try {
+          await this.joinPeerToChannel(channelName, node, log);
+          joinedNodes.push(node);
+        } catch (err) {
+          log(`[WARN] ${node.nombre} omitido: ${this.errorMessage(err)}`);
+        }
+      }
+
+      if (joinedNodes.length === 0) {
+        throw new BadRequestException(
+          'No se pudo unir ningún peer al canal. Verifica que los peers activos tengan certificados TLS y estén levantados.',
+        );
+      }
+
+      log(
+        '[INFO] Esperando que los peers inicialicen el ledger del canal (10s)...',
+      );
+      await sleep(10000);
+
+      await this.deployChaincodeToChannel(channelName, log, joinedNodes);
     }
-
-    log(
-      '[INFO] Esperando que los peers inicialicen el ledger del canal (10s)...',
-    );
-    await sleep(10000);
-
-    await this.deployChaincodeToChannel(channelName, log, joinedNodes);
 
     // 9. Persist to DB
     const { rows } = await this.db.query<FabricChannelRow>(
@@ -453,7 +464,7 @@ export class ChannelsService {
     }
     if (activeNodes.length === 0) {
       throw new BadRequestException(
-        `Ningún peer está en el canal ${channelName}. El join pudo haber fallado o el peer aún no inicializó el ledger. Reintenta en unos segundos.`,
+        `Ningún peer está en el canal ${channelName}. Si acabas de unirlo, el ledger puede tardar unos segundos: reintenta. Si el canal se creó sin unir peers, une al menos uno con «Unir» primero.`,
       );
     }
 

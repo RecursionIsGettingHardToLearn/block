@@ -42,6 +42,7 @@ export default function ChannelsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [creating, setCreating] = useState(false);
+  const [joinAll, setJoinAll] = useState(true);
 
   // Trabajo de creación en curso: vive en el servidor y se rehidrata al
   // entrar, así que navegar a otra página no pierde el progreso.
@@ -123,9 +124,11 @@ export default function ChannelsPage() {
       const { data } = await api.post<ChannelJob>('/channels', {
         nombre: form.nombre,
         descripcion: form.descripcion || undefined,
+        unirPeers: joinAll,
       });
       setCreateJob(data);
       setForm(emptyForm);
+      setJoinAll(true);
       setShowForm(false);
     } catch (e: unknown) {
       setError(getApiErrorMessage(e, 'Error al iniciar la creación'));
@@ -235,8 +238,9 @@ export default function ChannelsPage() {
               Nuevo canal
             </h3>
             <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
-              Genera el bloque génesis, une todos los peers activos y despliega
-              el chaincode (~1 min).
+              Genera el bloque génesis del canal en el orderer. Puedes unir
+              todos los peers y desplegar el chaincode ahora, o hacerlo
+              manualmente después.
             </p>
           </div>
 
@@ -292,6 +296,23 @@ export default function ChannelsPage() {
               />
             </div>
           </div>
+
+          <label className="flex items-start gap-2 cursor-pointer select-none mt-3">
+            <input
+              type="checkbox"
+              checked={joinAll}
+              onChange={(e) => setJoinAll(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="text-xs" style={{ color: 'var(--text-2)' }}>
+              <strong>
+                Unir todos los peers activos y desplegar el chaincode
+              </strong>{' '}
+              (~1 min). Si lo desmarcas, solo se crea el canal: después unes los
+              nodos uno a uno con «Unir» y despliegas el chaincode cuando haya
+              al menos uno unido.
+            </span>
+          </label>
 
           {error && (
             <div
