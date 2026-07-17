@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -55,9 +56,18 @@ export class ChannelsController {
   @HttpCode(HttpStatus.ACCEPTED)
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRADOR')
-  deployChaincode(@Param('channelName') channelName: string) {
+  deployChaincode(
+    @Param('channelName') channelName: string,
+    @Query('forzar') forzar?: string,
+  ) {
     // Responde al instante con el trabajo; el despliegue corre en segundo
     // plano y su avance sale en GET /channels/creations junto a los demás.
-    return this.channelsService.startDeployChaincode(channelName);
+    // ?forzar=true recomprometé el chaincode con secuencia+1, reemplazando la
+    // versión ya comprometida (necesario cuando el binario en el canal quedó
+    // desactualizado).
+    return this.channelsService.startDeployChaincode(
+      channelName,
+      forzar === 'true',
+    );
   }
 }

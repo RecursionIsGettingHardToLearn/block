@@ -65,4 +65,14 @@ describe('ChannelsService — creación de canal en segundo plano', () => {
       ConflictException,
     );
   });
+
+  it('startDeployChaincode propaga forzar a deployChaincode', () => {
+    const spy = jest
+      .spyOn(service, 'deployChaincode')
+      .mockReturnValue(new Promise(() => undefined));
+
+    service.startDeployChaincode('canal-x', true);
+    // Firma: (channelName, onLog, forzar) — el tercer argumento es true.
+    expect(spy).toHaveBeenCalledWith('canal-x', expect.any(Function), true);
+  });
 });

@@ -10,6 +10,7 @@ import {
   Circle,
   Server,
   Rocket,
+  RefreshCw,
 } from 'lucide-react';
 import api from '../../api/axios.config';
 import { getApiErrorMessage } from '../../api/errors';
@@ -168,14 +169,22 @@ export default function ChannelsPage() {
     }
   }
 
-  async function handleDeployChaincode(channelName: string) {
+  async function handleDeployChaincode(channelName: string, forzar = false) {
+    if (forzar) {
+      const ok = window.confirm(
+        `Esto reemplazará el chaincode ya desplegado en «${channelName}» por la ` +
+          'versión actual del código, subiendo su secuencia. Úsalo si el ' +
+          'chaincode del canal quedó desactualizado. ¿Continuar?',
+      );
+      if (!ok) return;
+    }
     setBusyAction(`cc:${channelName}`);
     setError(null);
     try {
       // El backend responde al instante; el despliegue corre en segundo plano
       // y el panel de progreso lo va actualizando (mismo que el de creación).
       const { data } = await api.post<ChannelJob>(
-        `/channels/${channelName}/chaincode`,
+        `/channels/${channelName}/chaincode${forzar ? '?forzar=true' : ''}`,
       );
       setCreateJob(data);
     } catch (e: unknown) {
@@ -680,6 +689,22 @@ export default function ChannelsPage() {
                           ? 'Chaincode listo'
                           : 'Desplegar chaincode'}
                       </button>
+                      {ch.chaincodeListo && (ch.peers?.length ?? 0) > 0 && (
+                        <button
+                          onClick={() => handleDeployChaincode(ch.nombre, true)}
+                          disabled={busyAction === `cc:${ch.nombre}`}
+                          className="flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold border cursor-pointer disabled:opacity-50"
+                          style={{
+                            background: 'transparent',
+                            borderColor: 'var(--border)',
+                            color: 'var(--text-2)',
+                          }}
+                          title="Reemplazar el chaincode del canal por la versión actual del código (sube la secuencia). Úsalo si quedó desactualizado."
+                        >
+                          <RefreshCw size={12} />
+                          Actualizar
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

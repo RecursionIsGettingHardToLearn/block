@@ -127,7 +127,7 @@ export class ChannelsService {
    * Igual que crear un canal, usa el contenedor cli para una secuencia larga
    * (package, install, approve, commit): una operación de canal a la vez.
    */
-  startDeployChaincode(channelName: string): ChannelJob {
+  startDeployChaincode(channelName: string, forzar = false): ChannelJob {
     this.assertNoJobRunning();
 
     const job: ChannelJob = {
@@ -141,7 +141,7 @@ export class ChannelsService {
     this.channelJobs.set(job.id, job);
     this.pruneJobs();
 
-    void this.deployChaincode(channelName, (msg) => job.logs.push(msg))
+    void this.deployChaincode(channelName, (msg) => job.logs.push(msg), forzar)
       .then(() => {
         job.estado = 'COMPLETADO';
         job.finalizadoEn = new Date();
@@ -391,13 +391,19 @@ export class ChannelsService {
   async deployChaincode(
     channelName: string,
     onLog?: (msg: string) => void,
+    forzar = false,
   ): Promise<{ logs: string }> {
     await this.assertChannelExists(channelName);
     const logs: string[] = [];
-    await this.deployChaincodeToChannel(channelName, (msg) => {
-      logs.push(msg);
-      onLog?.(msg);
-    });
+    await this.deployChaincodeToChannel(
+      channelName,
+      (msg) => {
+        logs.push(msg);
+        onLog?.(msg);
+      },
+      undefined,
+      forzar,
+    );
     return { logs: logs.join('\n') };
   }
 
@@ -505,6 +511,7 @@ export class ChannelsService {
     channelName: string,
     log: (msg: string) => void,
     candidateNodes?: FabricNodeRow[],
+    forzar = false,
   ): Promise<void> {
     const run = this.createRunner(log);
     const allNodes =
@@ -550,22 +557,46 @@ export class ChannelsService {
 
     const first = activeNodes[0];
 
+    // Secuencia comprometida actual: 0 si no hay nada, o N si ya existe. Se
+    // parsea de querycommitted. Al forzar, la nueva secuencia es N+1 (Fabric
+    // rechaza recomprometer con la misma) y la versión sube en consecuencia,
+    // de modo que el binario nuevo reemplaza al viejo. Sin forzar y con algo
+    // ya comprometido, no hay nada que hacer.
     const committed = await run(
       `docker exec ${peerEnv(first)} cli peer lifecycle chaincode querycommitted -C ${channelName} --name ${CC_NAME}`,
       `Verificando chaincode en ${channelName}`,
       true,
     );
-    if (committed.includes(CC_NAME)) {
+    const seqActual = committed.match(/Sequence:\s*(\d+)/)?.[1];
+    const yaComprometido = /Version:/i.test(committed);
+
+    if (yaComprometido && !forzar) {
       log(`[OK] ${CC_NAME} ya está confirmado en ${channelName}`);
       return;
     }
 
+    const nuevaSeq = yaComprometido
+      ? String(parseInt(seqActual ?? '1', 10) + 1)
+      : '1';
+    // La versión acompaña a la secuencia para que cada actualización tenga una
+    // etiqueta distinta (1.0, 2.0, …); no afecta la lógica, es trazabilidad.
+    const nuevaVersion = `${nuevaSeq}.0`;
+    const label = `${CC_NAME}_${nuevaVersion}`;
+    if (forzar && yaComprometido) {
+      log(
+        `[INFO] Forzando actualización del chaincode: secuencia ${seqActual} → ${nuevaSeq}`,
+      );
+    }
+
     await run(
-      `docker exec cli peer lifecycle chaincode package /tmp/${CC_NAME}-${channelName}.tar.gz --path /chaincode --lang node --label ${CC_NAME}_${CC_VERSION}`,
+      `docker exec cli peer lifecycle chaincode package /tmp/${CC_NAME}-${channelName}.tar.gz --path /chaincode --lang node --label ${label}`,
       'Empaquetando chaincode',
       true,
     );
 
+    // Instalar en TODOS los peers del canal: cada uno necesita el binario para
+    // poder endosar. Así, un peer unido después del primer commit también
+    // queda listo para respaldar transacciones (cierra el hueco de failover).
     for (const node of activeNodes) {
       await run(
         `docker exec ${peerEnv(node)} cli peer lifecycle chaincode install /tmp/${CC_NAME}-${channelName}.tar.gz`,
@@ -578,23 +609,34 @@ export class ChannelsService {
       `docker exec ${peerEnv(first)} cli peer lifecycle chaincode queryinstalled`,
       'Buscando Package ID',
     );
-    const line = queryOut
+    // El Package ID nuevo es el de la última línea con nuestro label: al
+    // recompilar, el hash cambia, y queremos el recién instalado.
+    const packageId = queryOut
       .split('\n')
-      .find((l) => l.includes(`${CC_NAME}_${CC_VERSION}`));
-    const packageId = line?.match(/Package ID: ([^,\s]+)/)?.[1]?.trim();
+      .filter((l) => l.includes(label))
+      .map((l) => l.match(/Package ID: ([^,\s]+)/)?.[1]?.trim())
+      .filter((id): id is string => !!id)
+      .pop();
     if (!packageId) {
       throw new InternalServerErrorException(
-        `No se encontró Package ID de ${CC_NAME}_${CC_VERSION}`,
+        `No se encontró Package ID de ${label}`,
       );
     }
 
     await run(
-      `docker exec ${peerEnv(first)} cli peer lifecycle chaincode approveformyorg -o orderer.ficct.edu.bo:7050 --tls --cafile ${ORDERER_CA} --channelID ${channelName} --name ${CC_NAME} --version ${CC_VERSION} --package-id ${packageId} --sequence ${CC_SEQ}`,
+      `docker exec ${peerEnv(first)} cli peer lifecycle chaincode approveformyorg -o orderer.ficct.edu.bo:7050 --tls --cafile ${ORDERER_CA} --channelID ${channelName} --name ${CC_NAME} --version ${nuevaVersion} --package-id ${packageId} --sequence ${nuevaSeq}`,
       'Aprobando chaincode en el canal',
     );
 
+    // Todos los peers del canal en el commit: la política de endoso los abarca.
+    const peerFlags = activeNodes
+      .map(
+        (n) =>
+          `--peerAddresses ${this.peerAddress(n)} --tlsRootCertFiles ${this.peerTlsPath(n)}`,
+      )
+      .join(' ');
     await run(
-      `docker exec ${peerEnv(first)} cli peer lifecycle chaincode commit -o orderer.ficct.edu.bo:7050 --tls --cafile ${ORDERER_CA} --channelID ${channelName} --name ${CC_NAME} --version ${CC_VERSION} --sequence ${CC_SEQ} --peerAddresses ${this.peerAddress(first)} --tlsRootCertFiles ${this.peerTlsPath(first)}`,
+      `docker exec ${peerEnv(first)} cli peer lifecycle chaincode commit -o orderer.ficct.edu.bo:7050 --tls --cafile ${ORDERER_CA} --channelID ${channelName} --name ${CC_NAME} --version ${nuevaVersion} --sequence ${nuevaSeq} ${peerFlags}`,
       'Confirmando chaincode en el canal',
     );
   }
