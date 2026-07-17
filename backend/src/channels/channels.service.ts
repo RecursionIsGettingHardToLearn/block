@@ -27,6 +27,8 @@ const ORDERER_CA =
 const ADMIN_MSP =
   '/crypto/peerOrganizations/ficct.edu.bo/users/Admin@ficct.edu.bo/msp';
 const CC_NAME = 'evoting-cc';
+/** Contrato que el backend invoca; el chaincode del canal debe exponerlo. */
+const CONTRACT_NAME = 'FicctVoting';
 const CC_VERSION = '1.0';
 const CC_SEQ = '1';
 
@@ -38,8 +40,14 @@ export interface FabricChannel {
   creadoEn: Date;
   /** Peers unidos al canal según el propio Fabric (solo los activos responden). */
   peers?: { id: string; nombre: string }[];
-  /** true si el chaincode ya está comprometido en el canal (según Fabric). */
-  chaincodeListo?: boolean;
+  /**
+   * Estado del chaincode en el canal, según Fabric:
+   * - 'AUSENTE': no hay chaincode comprometido todavía.
+   * - 'DESACTUALIZADO': hay uno comprometido, pero NO expone el contrato que
+   *   el backend necesita (FicctVoting). Hay que actualizarlo.
+   * - 'LISTO': comprometido y expone el contrato correcto.
+   */
+  chaincodeEstado?: 'AUSENTE' | 'DESACTUALIZADO' | 'LISTO';
 }
 
 interface FabricNodeRow {
@@ -229,28 +237,57 @@ export class ChannelsService {
           a.nombre.localeCompare(b.nombre),
         );
         const algunPeer = peers.length ? nodePorId.get(peers[0].id) : undefined;
-        const chaincodeListo = algunPeer
-          ? await this.isChaincodeCommitted(ch.nombre, algunPeer)
-          : false;
-        return { ...ch, peers, chaincodeListo };
+        const chaincodeEstado = algunPeer
+          ? await this.getChaincodeEstado(ch.nombre, algunPeer)
+          : ('AUSENTE' as const);
+        return { ...ch, peers, chaincodeEstado };
       }),
     );
   }
 
-  /** ¿Está el chaincode comprometido en el canal? Lo dice el propio Fabric. */
-  private async isChaincodeCommitted(
+  /**
+   * Estado del chaincode en el canal según Fabric. Distingue tres casos: no
+   * comprometido, comprometido pero con el contrato equivocado (el binario
+   * quedó viejo), o correcto. Lo segundo es lo que causaba «Contract name is
+   * not known» al activar una elección sin que la interfaz lo delatara.
+   */
+  private async getChaincodeEstado(
     channelName: string,
     node: FabricNodeRow,
-  ): Promise<boolean> {
+  ): Promise<'AUSENTE' | 'DESACTUALIZADO' | 'LISTO'> {
+    const env = `-e "CORE_PEER_ADDRESS=${this.peerAddress(node)}" -e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}" -e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}"`;
+    // ¿Hay algo comprometido?
     try {
       const { stdout } = await execAsync(
-        `docker exec -e "CORE_PEER_ADDRESS=${this.peerAddress(node)}" -e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}" -e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}" cli peer lifecycle chaincode querycommitted -C ${channelName} --name ${CC_NAME}`,
+        `docker exec ${env} cli peer lifecycle chaincode querycommitted -C ${channelName} --name ${CC_NAME}`,
         { timeout: 15_000 },
       );
-      // querycommitted imprime «Version: ...» cuando existe; error si no.
-      return /Version:/i.test(stdout);
+      if (!/Version:/i.test(stdout)) return 'AUSENTE';
     } catch {
-      return false;
+      return 'AUSENTE';
+    }
+
+    // Hay chaincode: ¿expone el contrato que el backend necesita? Se consulta
+    // GetMetadata (la API estándar de introspección de Fabric) y se busca el
+    // nombre del contrato. El JSON va en un archivo para evitar el infierno de
+    // escapado de comillas que hace fallar el comando en algunos shells.
+    try {
+      const ctorFile = `/tmp/getmeta-${channelName}.json`;
+      const ctor =
+        '{"function":"org.hyperledger.fabric:GetMetadata","Args":[]}';
+      const { stdout } = await execAsync(
+        `docker exec ${env} cli sh -c 'echo '\''${ctor}'\'' > ${ctorFile} && peer chaincode query -C ${channelName} -n ${CC_NAME} -c "$(cat ${ctorFile})"'`,
+        { timeout: 15_000 },
+      );
+      return stdout.includes(CONTRACT_NAME) ? 'LISTO' : 'DESACTUALIZADO';
+    } catch (err: unknown) {
+      // Si la introspección falla por una razón distinta, no afirmamos que
+      // esté desactualizado; se asume LISTO para no alarmar en falso, ya que
+      // el chaincode al menos está comprometido.
+      this.logger.warn(
+        `No se pudo introspeccionar el chaincode de ${channelName}: ${getExecErrorSummary(err)}`,
+      );
+      return 'LISTO';
     }
   }
 

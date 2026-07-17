@@ -23,8 +23,8 @@ interface FabricChannel {
   creadoEn: string;
   /** Peers unidos al canal según Fabric (lo reporta el backend). */
   peers?: { id: string; nombre: string }[];
-  /** true si el chaincode ya está comprometido en el canal. */
-  chaincodeListo?: boolean;
+  /** Estado del chaincode: ausente, comprometido-pero-viejo, o correcto. */
+  chaincodeEstado?: 'AUSENTE' | 'DESACTUALIZADO' | 'LISTO';
 }
 
 interface FabricNode {
@@ -661,50 +661,75 @@ export default function ChannelsPage() {
                           Unir
                         </button>
                       </div>
-                      <button
-                        onClick={() => handleDeployChaincode(ch.nombre)}
-                        disabled={
-                          busyAction === `cc:${ch.nombre}` ||
-                          ch.chaincodeListo === true ||
-                          !ch.peers?.length
+                      {(() => {
+                        const busy = busyAction === `cc:${ch.nombre}`;
+                        const sinPeers = !ch.peers?.length;
+                        const estado = ch.chaincodeEstado ?? 'AUSENTE';
+
+                        // LISTO: solo un sello, sin acción ni adivinación.
+                        if (estado === 'LISTO') {
+                          return (
+                            <span
+                              className="flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold"
+                              style={{
+                                background: 'var(--status-active-bg, #dcfce7)',
+                                color: 'var(--status-active, #16a34a)',
+                              }}
+                              title="El chaincode desplegado expone el contrato correcto"
+                            >
+                              <CheckCircle2 size={12} />
+                              Chaincode listo
+                            </span>
+                          );
                         }
-                        className="flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold text-white border-0 cursor-pointer disabled:opacity-50"
-                        style={{ background: 'var(--brand)' }}
-                        title={
-                          ch.chaincodeListo
-                            ? 'El chaincode ya está desplegado en este canal'
-                            : !ch.peers?.length
-                              ? 'Une al menos un peer antes de desplegar el chaincode'
-                              : 'Instalar, aprobar y confirmar chaincode en este canal'
+
+                        // DESACTUALIZADO: contrato equivocado. Se dice y se
+                        // ofrece Actualizar, en ámbar para que resalte.
+                        if (estado === 'DESACTUALIZADO') {
+                          return (
+                            <button
+                              onClick={() =>
+                                handleDeployChaincode(ch.nombre, true)
+                              }
+                              disabled={busy || sinPeers}
+                              className="flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold text-white border-0 cursor-pointer disabled:opacity-50"
+                              style={{
+                                background: 'var(--status-sched, #d97706)',
+                              }}
+                              title="El chaincode del canal no expone el contrato que el sistema necesita. Actualízalo a la versión actual del código."
+                            >
+                              {busy ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <RefreshCw size={12} />
+                              )}
+                              Actualizar chaincode
+                            </button>
+                          );
                         }
-                      >
-                        {busyAction === `cc:${ch.nombre}` ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : ch.chaincodeListo ? (
-                          <CheckCircle2 size={12} />
-                        ) : (
-                          <Rocket size={12} />
-                        )}
-                        {ch.chaincodeListo
-                          ? 'Chaincode listo'
-                          : 'Desplegar chaincode'}
-                      </button>
-                      {ch.chaincodeListo && (ch.peers?.length ?? 0) > 0 && (
-                        <button
-                          onClick={() => handleDeployChaincode(ch.nombre, true)}
-                          disabled={busyAction === `cc:${ch.nombre}`}
-                          className="flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold border cursor-pointer disabled:opacity-50"
-                          style={{
-                            background: 'transparent',
-                            borderColor: 'var(--border)',
-                            color: 'var(--text-2)',
-                          }}
-                          title="Reemplazar el chaincode del canal por la versión actual del código (sube la secuencia). Úsalo si quedó desactualizado."
-                        >
-                          <RefreshCw size={12} />
-                          Actualizar
-                        </button>
-                      )}
+
+                        // AUSENTE: desplegar por primera vez.
+                        return (
+                          <button
+                            onClick={() => handleDeployChaincode(ch.nombre)}
+                            disabled={busy || sinPeers}
+                            className="flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold text-white border-0 cursor-pointer disabled:opacity-50"
+                            style={{ background: 'var(--brand)' }}
+                            title={
+                              sinPeers
+                                ? 'Une al menos un peer antes de desplegar el chaincode'
+                                : 'Instalar, aprobar y confirmar chaincode en este canal'
+                            }
+                          >
+                            {busy ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Rocket size={12} />
+                            )}
+                            Desplegar chaincode
+                          </button>
+                        );
+                      })()}
                     </div>
                   </td>
                 </tr>
