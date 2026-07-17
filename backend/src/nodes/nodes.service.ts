@@ -673,6 +673,26 @@ export class NodesService {
       await fsp.rm(peerDir, { recursive: true, force: true });
     }
 
+    // ── 0.b Retirar restos de contenedores de intentos anteriores ────────────
+    // Un despliegue que falló a medias puede dejar contenedores detenidos con
+    // estos nombres (fue exactamente el caso de couchdb-peer2), y docker run
+    // no puede reutilizar un nombre ocupado ni por un contenedor muerto. Los
+    // detenidos se retiran; uno CORRIENDO es un conflicto real y se rechaza.
+    for (const ctr of [`couchdb-${peerName}`, `${peerName}.${ORG}`]) {
+      const resto = await this.inspectContainer(ctr);
+      if (!resto) continue;
+      if (resto.State?.Running) {
+        throw new ConflictException(
+          `El contenedor ${ctr} ya está corriendo. Usa otro nombre o revísalo con docker ps.`,
+        );
+      }
+      await run(
+        `docker rm -fv ${ctr}`,
+        `Retirando contenedor detenido de un intento anterior: ${ctr}`,
+        true,
+      );
+    }
+
     // ── 1. Crear estructura de directorios ───────────────────────────────────
     log('[INFO] Creando estructura de directorios...');
     for (const sub of [
