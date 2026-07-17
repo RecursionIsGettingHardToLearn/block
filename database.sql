@@ -154,6 +154,8 @@ CREATE TABLE recibos_voto (
   id_usuario       UUID                   NOT NULL REFERENCES usuarios(id)   ON DELETE RESTRICT,
   id_eleccion      UUID                   NOT NULL REFERENCES elecciones(id) ON DELETE RESTRICT,
   id_voto          UUID                   NOT NULL,
+  id_candidato     UUID,                    -- NULL en votos blancos/nulos
+  tipo_voto_especial VARCHAR(20),           -- 'votos_blancos' | 'votos_nulos'
   id_transaccion   VARCHAR(255)           UNIQUE,
   numero_bloque    BIGINT,
   canal_fabric     VARCHAR(100),
