@@ -7,6 +7,7 @@ import {
   AlertCircle,
   X,
   Layers,
+  Network,
 } from 'lucide-react';
 import api from '../../api/axios.config';
 import type { CareerType, RoleType, User } from '../../types';
@@ -68,6 +69,54 @@ export default function UsersPage() {
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState<RoleType | ''>('');
   const [page, setPage] = useState(1);
+
+  // Asignación rápida de canales: un mini-modal para no abrir el formulario
+  // completo de edición solo para marcar en qué canal vota un usuario.
+  const [assignUser, setAssignUser] = useState<User | null>(null);
+  const [assignChannels, setAssignChannels] = useState<string[]>([]);
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignError, setAssignError] = useState('');
+
+  function openAssign(user: User) {
+    setAssignUser(user);
+    setAssignChannels(user.channelNames ?? []);
+    setAssignError('');
+  }
+
+  function toggleAssignChannel(channelName: string) {
+    setAssignChannels((current) =>
+      current.includes(channelName)
+        ? current.filter((c) => c !== channelName)
+        : [...current, channelName],
+    );
+  }
+
+  async function saveAssign() {
+    if (!assignUser) return;
+    setAssignSaving(true);
+    setAssignError('');
+    try {
+      // Se reutiliza PATCH /users/:id enviando los datos que ya tiene el
+      // usuario y solo cambiando los canales: el backend reemplaza la
+      // asignación completa (borra las viejas, inserta las nuevas).
+      const payload: UserFormPayload = {
+        name: assignUser.name,
+        email: assignUser.email,
+        role: assignUser.role,
+        channelNames: assignChannels,
+      };
+      if (assignUser.role === 'VOTANTE' && assignUser.career) {
+        payload.career = assignUser.career;
+      }
+      await api.patch(`/users/${assignUser.id}`, payload);
+      await load();
+      setAssignUser(null);
+    } catch (err: unknown) {
+      setAssignError(getApiErrorMessage(err, 'No se pudo asignar el canal'));
+    } finally {
+      setAssignSaving(false);
+    }
+  }
 
   useEffect(() => {
     load();
@@ -377,6 +426,16 @@ export default function UsersPage() {
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex gap-1.5">
+                        {user.role === 'VOTANTE' && (
+                          <button
+                            onClick={() => openAssign(user)}
+                            aria-label="Asignar a un canal"
+                            title="Asignar a un canal para votar"
+                            className="p-1.5 rounded-lg cursor-pointer bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                          >
+                            <Network size={12} />
+                          </button>
+                        )}
                         <button
                           onClick={() => openEdit(user)}
                           aria-label="Editar usuario"
@@ -430,6 +489,95 @@ export default function UsersPage() {
           </div>
         )}
       </div>
+
+      {/* Mini-modal: asignación rápida de canales */}
+      {assignUser && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 p-4 animate-fade-in bg-slate-900/60 backdrop-blur-sm"
+          onClick={() => setAssignUser(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Network size={18} className="text-indigo-600" />
+                <h3 className="text-lg font-black text-slate-800">
+                  Asignar a un canal
+                </h3>
+              </div>
+              <button
+                onClick={() => setAssignUser(null)}
+                aria-label="Cerrar"
+                className="p-1 rounded-lg cursor-pointer text-slate-400 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">
+              {assignUser.name} podrá votar en las elecciones de los canales que
+              marques.
+            </p>
+
+            {channels.length === 0 ? (
+              <p className="text-sm text-slate-400 py-6 text-center">
+                No hay canales activos. Crea uno en la sección Canales.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-64 overflow-y-auto mb-4">
+                {channels.map((channel) => {
+                  const selected = assignChannels.includes(channel.nombre);
+                  return (
+                    <label
+                      key={channel.id}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border transition-colors ${
+                        selected
+                          ? 'border-indigo-300 bg-indigo-50'
+                          : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleAssignChannel(channel.nombre)}
+                      />
+                      <Layers size={14} className="text-slate-400" />
+                      <span className="text-sm font-semibold text-slate-700">
+                        {channel.nombre}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            {assignError && (
+              <div className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-3">
+                {assignError}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setAssignUser(null)}
+                className="px-4 py-2 rounded-xl text-sm font-medium cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveAssign}
+                disabled={assignSaving}
+                className="px-5 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer bg-indigo-600 hover:opacity-90 disabled:opacity-50"
+              >
+                {assignSaving ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       {mode && (
