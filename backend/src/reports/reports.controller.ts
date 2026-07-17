@@ -7,15 +7,31 @@ import {
   ParseUUIDPipe,
   Post,
   Req,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ChatReportDto } from './dto/chat-report.dto';
 import { ReportsAiService } from './reports-ai.service';
 import { ReportsService } from './reports.service';
+
+/** Solo los campos del archivo subido que este controlador necesita. */
+interface AudioSubido {
+  buffer: Buffer;
+  originalname: string;
+}
+
+/** Cuerpo de la petición de síntesis de voz. */
+interface SpeakBody {
+  texto: string;
+}
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -84,5 +100,36 @@ export class ReportsController {
       dto.pregunta,
     );
     return { respuesta };
+  }
+
+  /**
+   * Voz → texto (Whisper). Recibe el audio grabado en el navegador y devuelve
+   * el texto reconocido, para usarlo como pregunta del chat.
+   */
+  @Post('transcribe')
+  @Roles('ADMINISTRADOR', 'AUDITOR')
+  @UseInterceptors(FileInterceptor('audio'))
+  async transcribe(@UploadedFile() audio?: AudioSubido) {
+    if (!audio) {
+      throw new ForbiddenException('No se recibió audio.');
+    }
+    const texto = await this.ai.transcribe(
+      audio.buffer,
+      audio.originalname || 'audio.webm',
+    );
+    return { texto };
+  }
+
+  /**
+   * Texto → voz (TTS). Devuelve un MP3 con la respuesta leída, para que la
+   * interfaz la reproduzca.
+   */
+  @Post('speak')
+  @Roles('ADMINISTRADOR', 'AUDITOR')
+  async speak(@Body() body: SpeakBody, @Res() res: Response) {
+    const audio = await this.ai.synthesize(body.texto ?? '');
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', audio.length);
+    res.send(audio);
   }
 }

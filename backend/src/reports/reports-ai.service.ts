@@ -29,6 +29,56 @@ export class ReportsAiService {
     return !!this.config.get<string>('OPENAI_API_KEY');
   }
 
+  /**
+   * Transcribe audio a texto con Whisper (voz → texto). Recibe el buffer del
+   * archivo de audio grabado en el navegador. Devuelve el texto reconocido.
+   */
+  async transcribe(audio: Buffer, filename: string): Promise<string> {
+    const client = this.getClient();
+    const model = this.config.get<string>('OPENAI_STT_MODEL') ?? 'whisper-1';
+    try {
+      // toFile envuelve el buffer como archivo subible, sin tocar el disco.
+      const { toFile } = await import('openai');
+      const file = await toFile(audio, filename);
+      const result = await client.audio.transcriptions.create({
+        file,
+        model,
+        language: 'es',
+      });
+      return result.text;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'error desconocido';
+      this.logger.error(`Fallo la transcripción (Whisper): ${msg}`);
+      throw new ServiceUnavailableException(
+        'No se pudo transcribir el audio. Revisa la clave o inténtalo más tarde.',
+      );
+    }
+  }
+
+  /**
+   * Sintetiza voz a partir de texto (texto → voz) con el TTS de OpenAI.
+   * Devuelve el audio en MP3 como buffer, para que la interfaz lo reproduzca.
+   */
+  async synthesize(texto: string): Promise<Buffer> {
+    const client = this.getClient();
+    const model = this.config.get<string>('OPENAI_TTS_MODEL') ?? 'tts-1';
+    const voice = this.config.get<string>('OPENAI_TTS_VOICE') ?? 'alloy';
+    try {
+      const response = await client.audio.speech.create({
+        model,
+        voice,
+        input: texto,
+      });
+      return Buffer.from(await response.arrayBuffer());
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'error desconocido';
+      this.logger.error(`Fallo la síntesis de voz (TTS): ${msg}`);
+      throw new ServiceUnavailableException(
+        'No se pudo generar el audio. Revisa la clave o inténtalo más tarde.',
+      );
+    }
+  }
+
   private getClient(): OpenAI {
     if (this.client) return this.client;
     const apiKey = this.config.get<string>('OPENAI_API_KEY');

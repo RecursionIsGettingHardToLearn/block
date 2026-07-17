@@ -6,6 +6,9 @@ import {
   Bot,
   Loader2,
   BarChart3,
+  Mic,
+  Square,
+  Volume2,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -65,6 +68,87 @@ export default function ReportsPage() {
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Grabación de voz para dictar la pregunta (Whisper) y reproducción de la
+  // respuesta (TTS). El micrófono usa MediaRecorder del navegador; el audio se
+  // manda al backend, que llama a OpenAI (la clave nunca sale del servidor).
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  async function toggleRecording() {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop()); // libera el micrófono
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await transcribeAudio(blob);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch {
+      alert(
+        'No se pudo acceder al micrófono. Revisa los permisos del navegador.',
+      );
+    }
+  }
+
+  async function transcribeAudio(blob: Blob) {
+    setRecording(false);
+    setTranscribing(true);
+    try {
+      const form = new FormData();
+      form.append('audio', blob, 'pregunta.webm');
+      const { data } = await api.post<{ texto: string }>(
+        '/reports/transcribe',
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      // La transcripción se coloca en el input para que el usuario la revise
+      // antes de enviarla (no se dispara sola).
+      setQuestion((prev) => (prev ? `${prev} ${data.texto}` : data.texto));
+    } catch {
+      alert('No se pudo transcribir el audio.');
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
+  // Lee en voz alta la última respuesta del asistente (TTS).
+  async function speakLast() {
+    const last = [...chat].reverse().find((t) => t.role === 'assistant');
+    if (!last || speaking) return;
+    setSpeaking(true);
+    try {
+      const res = await api.post(
+        '/reports/speak',
+        { texto: last.content },
+        { responseType: 'blob' },
+      );
+      const url = URL.createObjectURL(res.data as Blob);
+      const audio = new Audio(url);
+      audio.onended = () => {
+        setSpeaking(false);
+        URL.revokeObjectURL(url);
+      };
+      await audio.play();
+    } catch {
+      setSpeaking(false);
+      alert('No se pudo reproducir el audio.');
+    }
+  }
 
   // Elecciones asignables (no borradores) para el selector del auditor.
   const reportableElections = useMemo(
@@ -410,11 +494,28 @@ export default function ReportsPage() {
 
       {/* Chat con IA */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100">
-          <Bot size={18} className="text-indigo-600" />
-          <h3 className="text-sm font-black text-slate-800">
-            Asistente de análisis
-          </h3>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Bot size={18} className="text-indigo-600" />
+            <h3 className="text-sm font-black text-slate-800">
+              Asistente de análisis
+            </h3>
+          </div>
+          {aiEnabled && chat.some((t) => t.role === 'assistant') && (
+            <button
+              onClick={speakLast}
+              disabled={speaking}
+              title="Escuchar la última respuesta"
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              {speaking ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Volume2 size={13} />
+              )}
+              Escuchar
+            </button>
+          )}
         </div>
 
         {!aiEnabled ? (
@@ -464,11 +565,35 @@ export default function ReportsPage() {
             </div>
 
             <div className="p-4 border-t border-slate-100 flex gap-2">
+              <button
+                onClick={toggleRecording}
+                disabled={transcribing || !hasData}
+                title={
+                  recording ? 'Detener grabación' : 'Dictar pregunta por voz'
+                }
+                className={`px-3 py-2.5 rounded-xl cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+                  recording
+                    ? 'bg-red-600 text-white animate-pulse'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {transcribing ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : recording ? (
+                  <Square size={16} />
+                ) : (
+                  <Mic size={16} />
+                )}
+              </button>
               <input
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && ask()}
-                placeholder="Escribe tu pregunta…"
+                placeholder={
+                  recording
+                    ? 'Grabando… habla ahora'
+                    : 'Escribe o dicta tu pregunta…'
+                }
                 disabled={asking || !hasData}
                 className="flex-1 px-4 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50 text-sm outline-none focus:border-indigo-400 disabled:opacity-50"
               />
