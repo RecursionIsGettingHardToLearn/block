@@ -136,7 +136,7 @@ CREATE TABLE candidatos (
 
 -- Una misma persona (identificada por nombre normalizado) no se repite en una elección.
 CREATE UNIQUE INDEX IF NOT EXISTS candidatos_persona_por_eleccion_key
-  ON candidatos (id_eleccion, LOWER(regexp_replace(TRIM(nombre_candidato), '\s+', ' ', 'g')));
+  ON candidatos (id_eleccion, LOWER(regexp_replace(TRIM(nombre_candidato), '[[:space:]]+', ' ', 'g')));
 
 -- ── TABLA 5: PADRON_ELECTORAL ────────────────────────────────────────────────
 

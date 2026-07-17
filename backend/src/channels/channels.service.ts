@@ -32,8 +32,6 @@ const ADMIN_MSP =
 const CC_NAME = 'evoting-cc';
 /** Contrato que el backend invoca; el chaincode del canal debe exponerlo. */
 const CONTRACT_NAME = 'FicctVoting';
-const CC_VERSION = '1.0';
-const CC_SEQ = '1';
 
 export interface FabricChannel {
   id: string;

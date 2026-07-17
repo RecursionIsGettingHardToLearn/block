@@ -362,8 +362,8 @@ export class ElectionsService {
     const duplicado = await this.db.query<{ id: string }>(
       `SELECT id FROM candidatos
        WHERE id_eleccion = $1
-         AND LOWER(regexp_replace(TRIM(nombre_candidato), '\s+', ' ', 'g'))
-           = LOWER(regexp_replace(TRIM($2), '\s+', ' ', 'g'))`,
+         AND LOWER(regexp_replace(TRIM(nombre_candidato), '[[:space:]]+', ' ', 'g'))
+           = LOWER(regexp_replace(TRIM($2), '[[:space:]]+', ' ', 'g'))`,
       [dto.electionId, dto.candidateName],
     );
     if (duplicado.rows.length > 0) {

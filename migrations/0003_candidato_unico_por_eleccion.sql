@@ -10,9 +10,9 @@
 DELETE FROM candidatos c
 USING candidatos d
 WHERE c.id_eleccion = d.id_eleccion
-  AND LOWER(regexp_replace(TRIM(c.nombre_candidato), '\s+', ' ', 'g'))
-    = LOWER(regexp_replace(TRIM(d.nombre_candidato), '\s+', ' ', 'g'))
+  AND LOWER(regexp_replace(TRIM(c.nombre_candidato), '[[:space:]]+', ' ', 'g'))
+    = LOWER(regexp_replace(TRIM(d.nombre_candidato), '[[:space:]]+', ' ', 'g'))
   AND c.creado_en > d.creado_en;
 
 CREATE UNIQUE INDEX IF NOT EXISTS candidatos_persona_por_eleccion_key
-  ON candidatos (id_eleccion, LOWER(regexp_replace(TRIM(nombre_candidato), '\s+', ' ', 'g')));
+  ON candidatos (id_eleccion, LOWER(regexp_replace(TRIM(nombre_candidato), '[[:space:]]+', ' ', 'g')));
