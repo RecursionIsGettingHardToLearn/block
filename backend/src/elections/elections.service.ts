@@ -284,6 +284,24 @@ export class ElectionsService {
       );
     }
 
+    // Una misma persona no puede postularse dos veces en la misma elección.
+    // El modelo identifica al candidato por su nombre (no hay CI ni vínculo a
+    // usuarios), así que se compara el nombre sin distinguir mayúsculas ni
+    // espacios de más. La restricción también vive en la base (ver
+    // migración 0003) como red de seguridad ante inserciones concurrentes.
+    const duplicado = await this.db.query<{ id: string }>(
+      `SELECT id FROM candidatos
+       WHERE id_eleccion = $1
+         AND LOWER(regexp_replace(TRIM(nombre_candidato), '\s+', ' ', 'g'))
+           = LOWER(regexp_replace(TRIM($2), '\s+', ' ', 'g'))`,
+      [dto.electionId, dto.candidateName],
+    );
+    if (duplicado.rows.length > 0) {
+      throw new BadRequestException(
+        `${dto.candidateName.trim()} ya está registrado como candidato en esta elección.`,
+      );
+    }
+
     const res = await this.db.query<Record<string, unknown>>(
       `INSERT INTO candidatos (id_eleccion, nombre_frente, nombre_candidato, nombre_cargo, url_foto, mision, logo_frente)
        VALUES ($1, $2, $3, $4, $5, $6, $7)

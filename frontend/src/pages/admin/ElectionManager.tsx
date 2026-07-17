@@ -19,6 +19,7 @@ import StatusBadge from '../../components/common/StatusBadge';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import api from '../../api/axios.config';
 import type { Election, ElectionStatus, Candidate, User } from '../../types';
+import { getApiErrorMessage } from '../../api/errors';
 
 interface FabricChannel {
   id: string;
@@ -103,6 +104,7 @@ export default function ElectionManager() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [candidateError, setCandidateError] = useState<string | null>(null);
   const [candidateForm, setCandidateForm] = useState({
     frontName: '',
     candidateName: '',
@@ -189,6 +191,7 @@ export default function ElectionManager() {
     // Usar logoDataUrl (base64) si existe, sino logoFrente (URL externa)
     const logoUrl = logoDataUrl || candidateForm.logoFrente || undefined;
 
+    setCandidateError(null);
     try {
       await addCandidate(electionId, {
         frontName: candidateForm.frontName,
@@ -198,7 +201,6 @@ export default function ElectionManager() {
         photoUrl: candidateForm.photoUrl || undefined,
         logoFrente: logoUrl,
       });
-      console.log('Candidato agregado exitosamente');
       setCandidateForm({
         frontName: '',
         candidateName: '',
@@ -209,7 +211,9 @@ export default function ElectionManager() {
         logoFile: null,
       });
     } catch (error) {
-      console.error('Error al agregar candidato:', error);
+      setCandidateError(
+        getApiErrorMessage(error, 'No se pudo agregar el candidato'),
+      );
     }
   }
 
@@ -562,6 +566,7 @@ export default function ElectionManager() {
                   users={users}
                   candidateForm={candidateForm}
                   setCandidateForm={setCandidateForm}
+                  candidateError={candidateError}
                   onAdd={() => handleAddCandidate(election.id)}
                   onRemove={(cid) =>
                     confirmAction('¿Eliminar este candidato?', () =>
@@ -595,6 +600,7 @@ function CandidatePanel({
   users,
   candidateForm,
   setCandidateForm,
+  candidateError,
   onAdd,
   onRemove,
   previewUrl,
@@ -611,6 +617,7 @@ function CandidatePanel({
     logoFile: File | null;
   };
   setCandidateForm: React.Dispatch<React.SetStateAction<typeof candidateForm>>;
+  candidateError: string | null;
   onAdd: () => void;
   onRemove: (id: string) => void;
   previewUrl: string | null;
@@ -882,6 +889,17 @@ function CandidatePanel({
               </p>
             </div>
 
+            {candidateError && (
+              <div
+                className="sm:col-span-2 text-xs rounded-lg px-3 py-2"
+                style={{
+                  background: 'var(--status-closed-bg, #fef2f2)',
+                  color: 'var(--status-closed, #dc2626)',
+                }}
+              >
+                {candidateError}
+              </div>
+            )}
             <button
               className="sm:col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white border-0 cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: 'var(--brand)' }}
@@ -892,11 +910,6 @@ function CandidatePanel({
               }
               onClick={(e) => {
                 e.preventDefault();
-                console.log('Button clicked!', {
-                  candidateName: candidateForm.candidateName,
-                  position: candidateForm.position,
-                  frontName: candidateForm.frontName,
-                });
                 onAdd();
               }}
             >
