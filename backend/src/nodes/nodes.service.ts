@@ -640,44 +640,26 @@ export class NodesService {
 
     log(`[INFO] Desplegando ${peerName}.${ORG} → puerto ${peerPort}`);
 
-    // ── 0. Verificar que no existe ───────────────────────────────────────────
-    // Que haya certificados en disco no significa que el peer exista: puede
-    // ser un peer vivo (con contenedor o registro) o los escombros de un
-    // despliegue anterior que falló o fue eliminado. Solo el primero bloquea;
-    // los escombros se limpian y se sigue, porque los certificados se firman
-    // con openssl contra la clave de la CA en disco y regenerarlos es trivial.
-    let cryptoPrevio = true;
-    try {
-      await fsp.access(mspDir);
-    } catch {
-      cryptoPrevio = false;
-    }
-    if (cryptoPrevio) {
-      const { rows: registrado } = await this.db.query<{ id: string }>(
-        `SELECT id FROM nodos_fabric WHERE nombre = $1`,
-        [peerName],
+    // ── 0. Duplicados reales y restos de intentos anteriores ────────────────
+    // De un peer pueden quedar tres recursos: su registro en la base, sus
+    // contenedores y sus certificados en disco. Solo el registro y un
+    // contenedor CORRIENDO significan «este peer existe»; lo demás son
+    // escombros de despliegues fallidos y se retiran solos. El orden importa:
+    // el registro se comprueba primero para no borrarle los contenedores
+    // detenidos a un peer legítimo que simplemente está apagado.
+    const { rows: registrado } = await this.db.query<{ id: string }>(
+      `SELECT id FROM nodos_fabric WHERE nombre = $1`,
+      [peerName],
+    );
+    if (registrado.length > 0) {
+      throw new ConflictException(
+        `Ya existe un peer llamado ${peerName} registrado en la base. Usa otro nombre.`,
       );
-      const contenedor = await this.inspectContainer(`${peerName}.${ORG}`);
-      if (registrado.length > 0 || contenedor) {
-        throw new ConflictException(
-          `Ya existe un peer llamado ${peerName} (${
-            registrado.length > 0
-              ? 'registrado en la base'
-              : 'con contenedor en Docker'
-          }). Usa otro nombre.`,
-        );
-      }
-      log(
-        `[WARN] Certificados huérfanos de un intento anterior de ${peerName}; se eliminan y regeneran`,
-      );
-      await fsp.rm(peerDir, { recursive: true, force: true });
     }
 
-    // ── 0.b Retirar restos de contenedores de intentos anteriores ────────────
-    // Un despliegue que falló a medias puede dejar contenedores detenidos con
-    // estos nombres (fue exactamente el caso de couchdb-peer2), y docker run
-    // no puede reutilizar un nombre ocupado ni por un contenedor muerto. Los
-    // detenidos se retiran; uno CORRIENDO es un conflicto real y se rechaza.
+    // Sin registro, un contenedor detenido con estos nombres es un resto (fue
+    // el caso de couchdb-peer2): docker run no puede reutilizar un nombre
+    // ocupado ni por un contenedor muerto. Uno corriendo sí es conflicto real.
     for (const ctr of [`couchdb-${peerName}`, `${peerName}.${ORG}`]) {
       const resto = await this.inspectContainer(ctr);
       if (!resto) continue;
@@ -691,6 +673,19 @@ export class NodesService {
         `Retirando contenedor detenido de un intento anterior: ${ctr}`,
         true,
       );
+    }
+
+    // Certificados en disco sin registro ni contenedores: huérfanos. Se
+    // regeneran sin riesgo, porque se firman con openssl contra la clave de
+    // la CA en disco: no hay estado en la CA que entre en conflicto.
+    try {
+      await fsp.access(mspDir);
+      log(
+        `[WARN] Certificados huérfanos de un intento anterior de ${peerName}; se eliminan y regeneran`,
+      );
+      await fsp.rm(peerDir, { recursive: true, force: true });
+    } catch {
+      // Sin crypto previo: camino limpio.
     }
 
     // ── 1. Crear estructura de directorios ───────────────────────────────────
