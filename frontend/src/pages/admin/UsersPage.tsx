@@ -112,7 +112,12 @@ export default function UsersPage() {
       await load();
       setAssignUser(null);
     } catch (err: unknown) {
-      setAssignError(getApiErrorMessage(err, 'No se pudo asignar el canal'));
+      const msg = (
+        err as { response?: { data?: { message?: string | string[] } } }
+      )?.response?.data?.message;
+      setAssignError(
+        (Array.isArray(msg) ? msg[0] : msg) || 'No se pudo asignar el canal',
+      );
     } finally {
       setAssignSaving(false);
     }
