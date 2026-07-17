@@ -135,6 +135,18 @@ export default function NodesPage() {
   }
 
   async function handleToggle(node: FabricNode) {
+    // Apagar el último peer encendido deja la red sin votación posible:
+    // se pide confirmación. Si además hay una elección en curso, el backend
+    // rechaza la operación aunque se confirme (la regla dura vive allá).
+    const quedanOtros = nodes.some((n) => n.id !== node.id && n.activo);
+    if (node.activo && !quedanOtros) {
+      const seguir = window.confirm(
+        'Este es el último peer encendido: al apagarlo, Fabric quedará ' +
+          'desconectado y no se podrán emitir votos hasta encender un peer ' +
+          'de nuevo. ¿Continuar?',
+      );
+      if (!seguir) return;
+    }
     setTogglingId(node.id);
     setError(null);
     try {

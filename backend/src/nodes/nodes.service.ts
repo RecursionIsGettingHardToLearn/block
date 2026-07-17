@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -299,6 +300,11 @@ export class NodesService {
 
     const current = this.map(cur[0]);
     const action = current.activo ? 'stop' : 'start';
+    if (action === 'stop') {
+      // Falla ANTES de tocar Docker: si la operación va a rechazarse, ningún
+      // contenedor debe haber cambiado de estado.
+      await this.assertNetworkStaysUsable(current.id);
+    }
     const peerCtr = current.hostAlias;
     const couchCtr = await this.resolveCouchContainer(peerCtr, current.nombre);
     const lines: string[] = [
@@ -354,7 +360,13 @@ export class NodesService {
     );
     // Borrar un id inexistente sigue siendo un no-op, como hasta ahora.
     if (rows.length) {
-      await this.cleanupContainers(this.map(rows[0]));
+      const node = this.map(rows[0]);
+      if (node.activo) {
+        // Des-registrar el último peer activo deja al backend igual de ciego
+        // que apagarlo: misma regla.
+        await this.assertNetworkStaysUsable(node.id);
+      }
+      await this.cleanupContainers(node);
     }
     await this.db.query(`DELETE FROM nodos_fabric WHERE id = $1`, [id]);
   }
@@ -395,6 +407,39 @@ export class NodesService {
         );
       }
     }
+  }
+
+  /**
+   * Impide dejar la red sin peers mientras hay una elección en curso.
+   *
+   * Apagar o des-registrar el último peer activo desconecta Fabric: los
+   * votantes dejan de poder emitir su voto en ese mismo instante. Fuera de
+   * una elección es una operación legítima (mantenimiento, fin de jornada) y
+   * la interfaz solo pide confirmación; con una elección ACTIVA se rechaza,
+   * y se rechaza aquí —no solo en la interfaz— porque la API puede invocarse
+   * directamente.
+   */
+  private async assertNetworkStaysUsable(nodeId: string): Promise<void> {
+    const { rows: others } = await this.db.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM nodos_fabric
+       WHERE activo = true AND id <> $1`,
+      [nodeId],
+    );
+    if (parseInt(others[0].count, 10) > 0) return; // quedan otros peers
+
+    const { rows: activas } = await this.db.query<{ titulo: string }>(
+      `SELECT titulo FROM elecciones
+       WHERE estado = 'ACTIVA'
+       ORDER BY fecha_inicio
+       LIMIT 3`,
+    );
+    if (!activas.length) return;
+
+    const titulos = activas.map((e) => `«${e.titulo}»`).join(', ');
+    throw new ConflictException(
+      `No se puede dejar la red sin peers activos: hay una elección en curso (${titulos}). ` +
+        'Cierra la elección o enciende otro peer antes.',
+    );
   }
 
   /**
