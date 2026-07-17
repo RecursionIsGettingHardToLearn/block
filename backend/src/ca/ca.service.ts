@@ -3,6 +3,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import * as crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -67,6 +68,8 @@ export class CaService {
   private readonly logger = new Logger(CaService.name);
   private http: AxiosInstance | null = null;
 
+  constructor(private readonly config: ConfigService) {}
+
   private async getHttp(): Promise<AxiosInstance> {
     if (this.http) return this.http;
     let caCert: Buffer | undefined;
@@ -75,10 +78,28 @@ export class CaService {
     } catch {
       /* skip */
     }
+
+    // En desarrollo, la Fabric CA regenera su certificado TLS cada vez que se
+    // recrea su contenedor, y el tls-cert.pem del disco queda desfasado: la
+    // conexión falla con «unable to verify the first certificate» aunque la CA
+    // esté corriendo. Con CA_TLS_INSECURE=true se omite esa verificación (la
+    // conexión sigue cifrada). En producción se deja en false y el certificado
+    // debe coincidir.
+    const inseguro = this.config.get('CA_TLS_INSECURE', 'false') === 'true';
+    const verificar = !!caCert && !inseguro;
+    if (inseguro) {
+      this.logger.warn(
+        'CA_TLS_INSECURE=true: no se verifica el certificado TLS de la CA (solo para desarrollo)',
+      );
+    }
+
     this.http = axios.create({
       baseURL: CA_URL,
       timeout: 8_000,
-      httpsAgent: new https.Agent({ ca: caCert, rejectUnauthorized: !!caCert }),
+      httpsAgent: new https.Agent({
+        ca: caCert,
+        rejectUnauthorized: verificar,
+      }),
     });
     return this.http;
   }
@@ -95,9 +116,13 @@ export class CaService {
         version: r.Version ?? '',
       };
     } catch (err: unknown) {
-      this.logger.error(`CA info failed: ${getErrorMessage(err)}`);
+      const msg = getErrorMessage(err);
+      this.logger.error(`CA info failed: ${msg}`);
+      const esTls = /certificate|self.signed|verify/i.test(msg);
       throw new ServiceUnavailableException(
-        'CA no disponible — asegúrate de que el contenedor ca.ficct.edu.bo esté corriendo',
+        esTls
+          ? 'No se pudo verificar el certificado TLS de la CA. Si recreaste el contenedor, su certificado cambió: en desarrollo, define CA_TLS_INSECURE=true.'
+          : 'CA no disponible — asegúrate de que el contenedor ca.ficct.edu.bo esté corriendo',
       );
     }
   }
