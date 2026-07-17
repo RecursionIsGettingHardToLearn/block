@@ -70,6 +70,53 @@ export default function UsersPage() {
   const [filterRole, setFilterRole] = useState<RoleType | ''>('');
   const [page, setPage] = useState(1);
 
+  // Selección múltiple para asignación masiva a un canal. Se guardan IDs; la
+  // barra de acción aparece cuando hay al menos uno seleccionado.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkModal, setBulkModal] = useState(false);
+  const [bulkChannel, setBulkChannel] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState('');
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function saveBulkAssign() {
+    if (!bulkChannel || selectedIds.size === 0) return;
+    setBulkSaving(true);
+    setBulkMsg('');
+    try {
+      const { data } = await api.post<{ asignados: number }>(
+        '/users/assign-channel',
+        { canal: bulkChannel, usuarioIds: [...selectedIds] },
+      );
+      await load();
+      const yaTenian = selectedIds.size - data.asignados;
+      setBulkMsg(
+        `${data.asignados} asignado(s) a «${bulkChannel}»` +
+          (yaTenian > 0 ? `; ${yaTenian} ya lo tenía(n)` : ''),
+      );
+      setSelectedIds(new Set());
+      setBulkChannel('');
+      setBulkModal(false);
+    } catch (err: unknown) {
+      const msg = (
+        err as { response?: { data?: { message?: string | string[] } } }
+      )?.response?.data?.message;
+      setBulkMsg(
+        (Array.isArray(msg) ? msg[0] : msg) || 'No se pudo asignar el canal',
+      );
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
   // Asignación rápida de canales: un mini-modal para no abrir el formulario
   // completo de edición solo para marcar en qué canal vota un usuario.
   const [assignUser, setAssignUser] = useState<User | null>(null);
@@ -251,6 +298,23 @@ export default function UsersPage() {
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const pageUsers = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
+  // Selecciona/deselecciona todos los VOTANTES de la página actual (asignar
+  // canal solo aplica a votantes).
+  const pageVoterIds = pageUsers
+    .filter((u) => u.role === 'VOTANTE')
+    .map((u) => u.id);
+  const allPageSelected =
+    pageVoterIds.length > 0 && pageVoterIds.every((id) => selectedIds.has(id));
+
+  function toggleSelectAllPage() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) pageVoterIds.forEach((id) => next.delete(id));
+      else pageVoterIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
   if (loading)
     return (
       <div className="flex items-center justify-center h-48 text-slate-400">
@@ -324,12 +388,63 @@ export default function UsersPage() {
         </span>
       </div>
 
+      {/* Barra de acción masiva: aparece cuando hay votantes seleccionados */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-indigo-50 border border-indigo-200">
+          <span className="text-sm font-semibold text-indigo-700">
+            {selectedIds.size} votante{selectedIds.size !== 1 ? 's' : ''}{' '}
+            seleccionado{selectedIds.size !== 1 ? 's' : ''}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs px-3 py-1.5 rounded-lg cursor-pointer text-indigo-600 hover:bg-indigo-100"
+            >
+              Limpiar
+            </button>
+            <button
+              onClick={() => {
+                setBulkChannel('');
+                setBulkMsg('');
+                setBulkModal(true);
+              }}
+              className="flex items-center gap-1.5 text-xs font-semibold px-4 py-1.5 rounded-lg cursor-pointer bg-indigo-600 text-white hover:opacity-90"
+            >
+              <Network size={13} />
+              Asignar a un canal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Aviso del resultado de una asignación masiva reciente */}
+      {bulkMsg && selectedIds.size === 0 && (
+        <div className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 flex items-center justify-between">
+          <span>{bulkMsg}</span>
+          <button
+            onClick={() => setBulkMsg('')}
+            className="text-xs cursor-pointer text-emerald-600 hover:underline"
+          >
+            Cerrar
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm min-w-[900px]">
             <thead>
               <tr className="bg-slate-50">
+                <th className="px-4 py-3 border-b border-slate-200 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    onChange={toggleSelectAllPage}
+                    disabled={pageVoterIds.length === 0}
+                    aria-label="Seleccionar todos los votantes de la página"
+                  />
+                </th>
                 {[
                   'Registro',
                   'Nombre',
@@ -354,7 +469,7 @@ export default function UsersPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="text-center px-5 py-10 text-sm text-slate-500"
                   >
                     Sin resultados
@@ -379,6 +494,16 @@ export default function UsersPage() {
                     key={user.id}
                     className={`transition-colors border-b border-slate-100 last:border-b-0 ${!user.isEnabled ? 'opacity-40' : ''}`}
                   >
+                    <td className="px-4 py-3">
+                      {user.role === 'VOTANTE' && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(user.id)}
+                          onChange={() => toggleSelect(user.id)}
+                          aria-label={`Seleccionar ${user.name}`}
+                        />
+                      )}
+                    </td>
                     <td className="px-5 py-3">
                       <code className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">
                         {user.ru}
@@ -494,6 +619,94 @@ export default function UsersPage() {
           </div>
         )}
       </div>
+
+      {/* Modal: asignación masiva a un canal */}
+      {bulkModal && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 p-4 animate-fade-in bg-slate-900/60 backdrop-blur-sm"
+          onClick={() => setBulkModal(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Network size={18} className="text-indigo-600" />
+                <h3 className="text-lg font-black text-slate-800">
+                  Asignar {selectedIds.size} votante
+                  {selectedIds.size !== 1 ? 's' : ''} a un canal
+                </h3>
+              </div>
+              <button
+                onClick={() => setBulkModal(false)}
+                aria-label="Cerrar"
+                className="p-1 rounded-lg cursor-pointer text-slate-400 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">
+              El canal se agrega a los seleccionados sin quitarles los que ya
+              tengan. Podrán votar en las elecciones de ese canal.
+            </p>
+
+            {channels.length === 0 ? (
+              <p className="text-sm text-slate-400 py-6 text-center">
+                No hay canales activos. Crea uno en la sección Canales.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-64 overflow-y-auto mb-4">
+                {channels.map((channel) => (
+                  <label
+                    key={channel.id}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border transition-colors ${
+                      bulkChannel === channel.nombre
+                        ? 'border-indigo-300 bg-indigo-50'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="bulk-channel"
+                      checked={bulkChannel === channel.nombre}
+                      onChange={() => setBulkChannel(channel.nombre)}
+                    />
+                    <Layers size={14} className="text-slate-400" />
+                    <span className="text-sm font-semibold text-slate-700">
+                      {channel.nombre}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {bulkMsg && (
+              <div className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-3">
+                {bulkMsg}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setBulkModal(false)}
+                className="px-4 py-2 rounded-xl text-sm font-medium cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveBulkAssign}
+                disabled={bulkSaving || !bulkChannel}
+                className="px-5 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer bg-indigo-600 hover:opacity-90 disabled:opacity-50"
+              >
+                {bulkSaving ? 'Asignando…' : 'Asignar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mini-modal: asignación rápida de canales */}
       {assignUser && (

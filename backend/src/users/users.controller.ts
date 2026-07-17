@@ -15,6 +15,7 @@ import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
+import { AssignChannelDto } from './dto/assign-channel.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
@@ -56,6 +57,12 @@ export class UsersController {
   async update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     const user = await this.usersService.update(id, dto);
     return sanitize(user);
+  }
+
+  @Post('assign-channel')
+  @Roles('ADMINISTRADOR')
+  async assignChannel(@Body() dto: AssignChannelDto) {
+    return this.usersService.assignChannelToMany(dto.canal, dto.usuarioIds);
   }
 
   @Delete(':id')

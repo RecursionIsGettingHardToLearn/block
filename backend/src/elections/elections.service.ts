@@ -138,6 +138,76 @@ export class ElectionsService {
     );
   }
 
+  /**
+   * Padrón de participación de una elección: quiénes podían votar (los
+   * asignados al canal de la elección) y si votaron. «Votó» = tiene un recibo
+   * confirmado para esa elección. Sirve para saber quiénes NO votaron.
+   */
+  async getParticipation(electionId: string): Promise<{
+    eleccion: { id: string; titulo: string; canal: string; estado: string };
+    total: number;
+    votaron: number;
+    noVotaron: number;
+    votantes: {
+      id: string;
+      ru: string | null;
+      nombre: string;
+      email: string;
+      voto: boolean;
+    }[];
+  }> {
+    const eleccion = await this.findElectionById(electionId);
+
+    // El padrón son los usuarios asignados al canal de la elección. El voto se
+    // detecta con un recibo CONFIRMADO de esa elección (una sola consulta,
+    // LEFT JOIN al recibo).
+    const { rows } = await this.db.query<{
+      id: string;
+      ru: string | null;
+      nombre: string;
+      correo: string;
+      voto: boolean;
+    }>(
+      `SELECT u.id,
+              u.ru,
+              u.nombre,
+              u.correo,
+              EXISTS(
+                SELECT 1 FROM recibos_voto rv
+                WHERE rv.id_usuario = u.id
+                  AND rv.id_eleccion = $1
+                  AND rv.estado = 'CONFIRMADO'
+              ) AS voto
+       FROM usuarios u
+       INNER JOIN usuario_canales uc ON uc.id_usuario = u.id
+       WHERE uc.canal_fabric = $2
+         AND u.rol = 'VOTANTE'
+       ORDER BY voto ASC, u.nombre ASC`,
+      [electionId, eleccion.channelName],
+    );
+
+    const votantes = rows.map((r) => ({
+      id: r.id,
+      ru: r.ru,
+      nombre: r.nombre,
+      email: r.correo,
+      voto: r.voto,
+    }));
+    const votaron = votantes.filter((v) => v.voto).length;
+    return {
+      eleccion: {
+        id: eleccion.id,
+        titulo: eleccion.title,
+        canal: eleccion.channelName,
+        estado: eleccion.status,
+      },
+      total: votantes.length,
+      votaron,
+      noVotaron: votantes.length - votaron,
+      votantes,
+    };
+  }
+
   async findCurrentVoterElections(userId: string): Promise<Election[]> {
     const electRes = await this.db.query<Record<string, unknown>>(
       `SELECT e.*

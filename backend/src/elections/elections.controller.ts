@@ -48,6 +48,13 @@ export class ElectionsController {
     return this.electionsService.findElectionById(id);
   }
 
+  @Get(':id/participation')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR')
+  participation(@Param('id', ParseUUIDPipe) id: string) {
+    return this.electionsService.getParticipation(id);
+  }
+
   @Patch(':id/status')
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRADOR')

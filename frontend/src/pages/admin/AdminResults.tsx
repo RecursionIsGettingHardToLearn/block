@@ -16,6 +16,26 @@ export default function AdminResults() {
   const [loadingTallies, setLoadingTallies] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // Participación (padrón): quiénes podían votar en la elección seleccionada y
+  // si votaron. Se consulta al backend cuando cambia la elección.
+  interface Participation {
+    total: number;
+    votaron: number;
+    noVotaron: number;
+    votantes: {
+      id: string;
+      ru: string | null;
+      nombre: string;
+      email: string;
+      voto: boolean;
+    }[];
+  }
+  const [participation, setParticipation] = useState<Participation | null>(
+    null,
+  );
+  const [loadingPart, setLoadingPart] = useState(false);
+  const [showOnlyMissing, setShowOnlyMissing] = useState(false);
+
   // Solo se consulta el conteo de la elección elegida: antes se disparaba
   // una petición por CADA elección aunque se mirara una sola.
   const fetchTally = useCallback(async (electionId: string) => {
@@ -55,6 +75,18 @@ export default function AdminResults() {
   useEffect(() => {
     if (selectedId) void fetchTally(selectedId);
   }, [selectedId, fetchTally]);
+
+  // Cargar el padrón de participación de la elección seleccionada.
+  useEffect(() => {
+    if (!selectedId) return;
+    setLoadingPart(true);
+    setShowOnlyMissing(false);
+    api
+      .get<Participation>(`/elections/${selectedId}/participation`)
+      .then(({ data }) => setParticipation(data))
+      .catch(() => setParticipation(null))
+      .finally(() => setLoadingPart(false));
+  }, [selectedId]);
 
   const refresh = () => {
     refreshElections();
@@ -377,6 +409,141 @@ export default function AdminResults() {
               })}
             </div>
           )}
+
+          {/* Panel de participación (padrón): quiénes votaron y quiénes no */}
+          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+                <Users size={22} />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
+                  Participación
+                </h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.25em]">
+                  Padrón asignado al canal de esta elección
+                </p>
+              </div>
+            </div>
+
+            {loadingPart ? (
+              <div className="flex justify-center py-10 text-indigo-600">
+                <RefreshCw size={28} className="animate-spin opacity-30" />
+              </div>
+            ) : !participation || participation.total === 0 ? (
+              <p className="text-center text-sm text-slate-400 py-10">
+                No hay votantes asignados al canal de esta elección. Asígnalos
+                desde la sección Usuarios.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="bg-slate-50 rounded-2xl p-4 text-center">
+                    <div className="text-3xl font-black text-slate-800">
+                      {participation.total}
+                    </div>
+                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">
+                      Padrón
+                    </div>
+                  </div>
+                  <div className="bg-emerald-50 rounded-2xl p-4 text-center">
+                    <div className="text-3xl font-black text-emerald-600">
+                      {participation.votaron}
+                    </div>
+                    <div className="text-[9px] font-black uppercase tracking-widest text-emerald-500 mt-1">
+                      Votaron
+                    </div>
+                  </div>
+                  <div className="bg-amber-50 rounded-2xl p-4 text-center">
+                    <div className="text-3xl font-black text-amber-600">
+                      {participation.noVotaron}
+                    </div>
+                    <div className="text-[9px] font-black uppercase tracking-widest text-amber-500 mt-1">
+                      No votaron
+                    </div>
+                  </div>
+                </div>
+
+                {/* Barra de participación */}
+                <div className="mb-2 flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-500 uppercase tracking-widest">
+                    {(
+                      (participation.votaron / participation.total) *
+                      100
+                    ).toFixed(1)}
+                    % de participación
+                  </span>
+                  <button
+                    onClick={() => setShowOnlyMissing((v) => !v)}
+                    className="px-3 py-1 rounded-lg cursor-pointer bg-amber-50 text-amber-700 font-semibold hover:bg-amber-100 transition-colors"
+                  >
+                    {showOnlyMissing
+                      ? 'Ver todos'
+                      : `Ver solo quienes no votaron (${participation.noVotaron})`}
+                  </button>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-6">
+                  <div
+                    className="h-full bg-emerald-500 transition-all"
+                    style={{
+                      width: `${(participation.votaron / participation.total) * 100}%`,
+                    }}
+                  />
+                </div>
+
+                {/* Lista de votantes */}
+                <div className="max-h-96 overflow-y-auto rounded-xl border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-50">
+                      <tr>
+                        {['Registro', 'Nombre', 'Email', 'Estado'].map((h) => (
+                          <th
+                            key={h}
+                            className="text-left px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-200"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {participation.votantes
+                        .filter((v) => !showOnlyMissing || !v.voto)
+                        .map((v) => (
+                          <tr
+                            key={v.id}
+                            className="border-b border-slate-50 last:border-b-0"
+                          >
+                            <td className="px-4 py-2">
+                              <code className="text-xs text-slate-600">
+                                {v.ru ?? '—'}
+                              </code>
+                            </td>
+                            <td className="px-4 py-2 font-medium text-slate-800">
+                              {v.nombre}
+                            </td>
+                            <td className="px-4 py-2 text-slate-500 text-xs">
+                              {v.email}
+                            </td>
+                            <td className="px-4 py-2">
+                              {v.voto ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
+                                  ✓ Votó
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-600">
+                                  ○ No votó
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
         </>
       )}
     </div>

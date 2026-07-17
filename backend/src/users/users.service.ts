@@ -286,6 +286,41 @@ export class UsersService implements OnModuleInit {
     `);
   }
 
+  /**
+   * Asigna UN canal a varios usuarios de golpe, de forma aditiva: no borra los
+   * canales que cada usuario ya tuviera. Devuelve cuántos quedaron asignados
+   * (los que ya lo tenían no se cuentan como nuevos). El canal debe existir.
+   */
+  async assignChannelToMany(
+    canal: string,
+    usuarioIds: string[],
+  ): Promise<{ asignados: number }> {
+    await this.ensureUserChannelsTable();
+
+    const { rows: canalRows } = await this.db.query<{ nombre: string }>(
+      `SELECT nombre FROM canales_fabric WHERE nombre = $1`,
+      [canal],
+    );
+    if (canalRows.length === 0) {
+      throw new NotFoundException(`El canal ${canal} no existe`);
+    }
+
+    const ids = [...new Set(usuarioIds)];
+    let asignados = 0;
+    await this.db.transaction(async (client) => {
+      for (const userId of ids) {
+        const res = await client.query(
+          `INSERT INTO usuario_canales (id_usuario, canal_fabric)
+           VALUES ($1, $2)
+           ON CONFLICT (id_usuario, canal_fabric) DO NOTHING`,
+          [userId, canal],
+        );
+        asignados += res.rowCount ?? 0;
+      }
+    });
+    return { asignados };
+  }
+
   private async replaceUserChannels(
     userId: string,
     channelNames: string[],
