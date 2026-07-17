@@ -7,9 +7,11 @@ import {
   Ban,
   Users,
   ShieldCheck,
+  Printer,
 } from 'lucide-react';
 import { useElections } from '../../hooks/useElections';
 import api from '../../api/axios.config';
+import { useAuthStore } from '../../store/auth.store';
 
 interface VoteReceipt {
   electionId: string;
@@ -27,6 +29,9 @@ export default function VotingPage() {
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<Record<string, string>>({});
+  const user = useAuthStore((state) => state.user);
+  // Recibos completos por elección, para el comprobante imprimible.
+  const [receipts, setReceipts] = useState<Record<string, VoteReceipt>>({});
   const [tallies, setTallies] = useState<
     Record<string, Record<string, number>>
   >({});
@@ -66,14 +71,17 @@ export default function VotingPage() {
       .get<VoteReceipt[]>('/fabric/my-receipts')
       .then(({ data }) => {
         const receiptResults: Record<string, string> = {};
+        const fullReceipts: Record<string, VoteReceipt> = {};
         const voted = new Set<string>();
 
         for (const receipt of data) {
           receiptResults[receipt.electionId] = receipt.txId;
+          fullReceipts[receipt.electionId] = receipt;
           voted.add(receipt.electionId);
         }
 
         setResults((prev) => ({ ...receiptResults, ...prev }));
+        setReceipts((prev) => ({ ...fullReceipts, ...prev }));
         setVotedInElections((prev) => new Set([...prev, ...voted]));
       })
       .catch(() => {});
@@ -163,6 +171,74 @@ export default function VotingPage() {
     } finally {
       setSubmitting(false);
       setConfirming(false);
+    }
+  }
+
+  // Genera un comprobante imprimible del voto: abre una ventana con el recibo
+  // formateado y lanza el diálogo de impresión del navegador (que permite
+  // imprimir en papel o guardar como PDF). No revela por quién se votó: solo
+  // acredita que el voto se registró, con su identificador de transacción.
+  function imprimirComprobante() {
+    const filas = activeElections
+      .filter((e) => receipts[e.id])
+      .map((e) => {
+        const r = receipts[e.id];
+        const fecha = new Date(r.createdAt).toLocaleString('es-BO');
+        return `
+          <div class="recibo">
+            <div class="eleccion">${e.title}</div>
+            <table>
+              <tr><td>Estado</td><td><strong>${r.status}</strong></td></tr>
+              <tr><td>Canal</td><td>${r.channel ?? '—'}</td></tr>
+              <tr><td>Fecha y hora</td><td>${fecha}</td></tr>
+              <tr><td>ID de transacción</td><td class="tx">${r.txId}</td></tr>
+            </table>
+          </div>`;
+      })
+      .join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8" />
+<title>Comprobante de voto</title>
+<style>
+  * { font-family: system-ui, sans-serif; }
+  body { max-width: 640px; margin: 40px auto; color: #1e293b; padding: 0 20px; }
+  h1 { font-size: 20px; text-transform: uppercase; letter-spacing: 1px; margin: 0; }
+  .sub { color: #64748b; font-size: 12px; margin: 4px 0 24px; }
+  .datos { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+           padding: 16px; margin-bottom: 24px; font-size: 13px; }
+  .datos div { margin: 2px 0; }
+  .recibo { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px;
+            margin-bottom: 16px; }
+  .eleccion { font-weight: 800; font-size: 15px; margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+  td:first-child { color: #64748b; width: 40%; }
+  .tx { font-family: monospace; font-size: 11px; word-break: break-all; }
+  .nota { font-size: 11px; color: #94a3b8; margin-top: 24px; text-align: center; }
+  @media print { body { margin: 0; } }
+</style></head>
+<body>
+  <h1>Comprobante de Voto</h1>
+  <div class="sub">Sistema de Votación FICCT · Registrado en Blockchain</div>
+  <div class="datos">
+    <div><strong>Votante:</strong> ${user?.name ?? '—'}</div>
+    <div><strong>Registro:</strong> ${user?.ru ?? '—'}</div>
+    <div><strong>Emitido:</strong> ${new Date().toLocaleString('es-BO')}</div>
+  </div>
+  ${filas}
+  <div class="nota">
+    Este comprobante acredita que su voto fue registrado en la cadena de
+    bloques. No revela por quién votó. Verifique su voto con el ID de
+    transacción. Elección protegida por criptografía e inmutabilidad.
+  </div>
+  <script>window.onload = function () { window.print(); }</script>
+</body></html>`;
+
+    const win = window.open('', '_blank', 'width=720,height=800');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
     }
   }
 
@@ -316,16 +392,14 @@ export default function VotingPage() {
           })}
         </div>
 
-        {/* CTA Button */}
-        <a
-          href="/elecciones"
-          className="group px-10 py-5 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl active:scale-95"
+        {/* Comprobante imprimible del voto */}
+        <button
+          onClick={imprimirComprobante}
+          className="group px-10 py-5 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl active:scale-95 flex items-center gap-2"
         >
-          Ver Resultados en Vivo
-          <span className="inline-block ml-2 group-hover:translate-x-1 transition-transform">
-            →
-          </span>
-        </a>
+          <Printer size={16} />
+          Imprimir comprobante de voto
+        </button>
       </div>
     );
   }
