@@ -67,6 +67,7 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState<RoleType | ''>('');
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     load();
@@ -184,6 +185,18 @@ export default function UsersPage() {
     return matchSearch && (!filterRole || u.role === filterRole);
   });
 
+  // Paginación en el cliente: la búsqueda y el filtro por rol siguen siendo
+  // instantáneos sobre los datos en memoria; solo se recorta cuántas filas se
+  // renderizan a la vez. Para el tamaño esperado del padrón, traer todo de una
+  // vez es barato; lo que pesa es pintar cientos de filas.
+  const PAGE_SIZE = 15;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // La página vive fuera del render en un estado; se corrige si queda fuera de
+  // rango tras filtrar (p. ej. estabas en la página 5 y el filtro deja 1).
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const pageUsers = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
   if (loading)
     return (
       <div className="flex items-center justify-center h-48 text-slate-400">
@@ -231,13 +244,19 @@ export default function UsersPage() {
             className="w-full pl-8 pr-3 py-2 rounded-lg text-sm bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500"
             placeholder="Buscar por registro, nombre o email…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
         <select
           className="px-3 py-2 rounded-lg text-sm bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
           value={filterRole}
-          onChange={(e) => setFilterRole(e.target.value as RoleType | '')}
+          onChange={(e) => {
+            setFilterRole(e.target.value as RoleType | '');
+            setPage(1);
+          }}
         >
           <option value="">Todos los roles</option>
           {ROLES.map((r) => (
@@ -288,7 +307,7 @@ export default function UsersPage() {
                   </td>
                 </tr>
               )}
-              {filtered.map((user) => {
+              {pageUsers.map((user) => {
                 const roleStyle = {
                   VOTANTE: { color: 'text-emerald-600', bg: 'bg-emerald-50' },
                   ESTUDIANTE: {
@@ -380,6 +399,36 @@ export default function UsersPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Paginación: solo si hay más de una página */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 text-sm">
+            <span className="text-slate-500">
+              Mostrando {pageStart + 1}–
+              {Math.min(pageStart + PAGE_SIZE, filtered.length)} de{' '}
+              {filtered.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="px-3 py-1.5 rounded-lg cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Anterior
+              </button>
+              <span className="px-3 text-slate-600 font-semibold">
+                {safePage} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="px-3 py-1.5 rounded-lg cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal */}
