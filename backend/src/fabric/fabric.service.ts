@@ -38,6 +38,16 @@ export interface TallyAsset {
   electionId: string;
   results: Record<string, number>;
   lastUpdated: string;
+  /**
+   * Si es true, `results` viene VACÍO a propósito: la elección sigue ACTIVA y
+   * el desglose por candidato se oculta hasta el cierre para no influir en
+   * quienes aún no votan (efecto arrastre). La participación sí se informa.
+   */
+  resultadosOcultos?: boolean;
+  /** Estado de la elección, para que la interfaz sepa qué mostrar. */
+  estadoEleccion?: string;
+  /** Participación: siempre disponible, no revela por quién se votó. */
+  participacion?: { emitidos: number };
 }
 
 export interface VoteReceipt {
@@ -376,7 +386,45 @@ export class FabricService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async getResultados(electionId: string): Promise<TallyAsset> {
+  async getResultados(
+    electionId: string,
+    // Solo las llamadas administrativas piden el desglose durante una elección
+    // activa; las públicas y de votante nunca lo reciben mientras ACTIVA.
+    incluirParcialesSiActiva = false,
+  ): Promise<TallyAsset> {
+    // Estado de la elección: decide si se revela el desglose por candidato.
+    const estadoRes = await this.db.query<{ estado: string }>(
+      `SELECT estado FROM elecciones WHERE id = $1`,
+      [electionId],
+    );
+    const estadoEleccion = estadoRes.rows[0]?.estado ?? 'DESCONOCIDO';
+    const estaActiva = estadoEleccion === 'ACTIVA';
+
+    // Participación: cuántos votos confirmados hay en total. No revela por
+    // quién, así que es seguro mostrarla siempre.
+    const partRes = await this.db.query<{ emitidos: string }>(
+      `SELECT COUNT(*) AS emitidos FROM recibos_voto
+       WHERE id_eleccion = $1 AND estado = 'CONFIRMADO'`,
+      [electionId],
+    );
+    const emitidos = parseInt(partRes.rows[0]?.emitidos ?? '0', 10);
+
+    // La regla del Nivel 1: con la elección ACTIVA, el desglose por candidato
+    // se oculta a todos salvo a una llamada administrativa explícita. Así un
+    // votante no puede ver quién gana ni coordinar el voto de los demás, y la
+    // guarda vive en el backend: no basta abrir la consola del navegador.
+    if (estaActiva && !incluirParcialesSiActiva) {
+      return {
+        assetType: 'tally',
+        electionId,
+        results: {},
+        lastUpdated: new Date().toISOString(),
+        resultadosOcultos: true,
+        estadoEleccion,
+        participacion: { emitidos },
+      };
+    }
+
     // Obtener los conteos reales desde la base de datos (Sincronizado con Blockchain)
     const resultsRes = await this.db.query<CandidateTallyRow>(
       `SELECT c.id, COUNT(rv.id_candidato) as count
@@ -416,6 +464,9 @@ export class FabricService implements OnModuleInit, OnModuleDestroy {
       electionId,
       results,
       lastUpdated: new Date().toISOString(),
+      resultadosOcultos: false,
+      estadoEleccion,
+      participacion: { emitidos },
     };
   }
 

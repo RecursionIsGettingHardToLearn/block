@@ -14,6 +14,8 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { UsersService } from '../users/users.service';
 import { EmitVoteDto } from './dto/emit-vote.dto';
 import { FabricService } from './fabric.service';
@@ -94,9 +96,22 @@ export class FabricController {
     return { txId, channel };
   }
 
+  // Público / votante: durante una elección ACTIVA devuelve solo participación,
+  // nunca el desglose por candidato (se decide en el servicio por estado).
   @Get('results/:electionId')
   getResults(@Param('electionId', ParseUUIDPipe) electionId: string) {
     return this.fabricService.getResultados(electionId);
+  }
+
+  // Administrativo: el mismo conteo pero con el desglose aunque esté ACTIVA.
+  // Requiere rol ADMINISTRADOR; queda como acceso auditado, no expuesto al
+  // público. (No cierra la brecha de acceso directo a la base: eso exigiria
+  // cifrado, planteado como trabajo futuro.)
+  @Get('results/:electionId/admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMINISTRADOR')
+  getResultsAdmin(@Param('electionId', ParseUUIDPipe) electionId: string) {
+    return this.fabricService.getResultados(electionId, true);
   }
 
   @Get('my-receipts')

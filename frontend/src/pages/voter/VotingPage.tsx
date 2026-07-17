@@ -30,6 +30,11 @@ export default function VotingPage() {
   const [tallies, setTallies] = useState<
     Record<string, Record<string, number>>
   >({});
+  // Por elección: si el desglose está oculto (elección ACTIVA) y cuántos votos
+  // se han emitido (participación, sin revelar por quién).
+  const [tallyMeta, setTallyMeta] = useState<
+    Record<string, { ocultos: boolean; emitidos: number }>
+  >({});
   const [error, setError] = useState<string | null>(null);
   const [votedInElections, setVotedInElections] = useState<Set<string>>(
     new Set(),
@@ -79,13 +84,30 @@ export default function VotingPage() {
 
     Promise.all(
       activeElections.map(async (election) => {
-        const { data } = await api.get<{ results: Record<string, number> }>(
-          `/fabric/results/${election.id}`,
-        );
-        return [election.id, data.results] as const;
+        const { data } = await api.get<{
+          results: Record<string, number>;
+          resultadosOcultos?: boolean;
+          participacion?: { emitidos: number };
+        }>(`/fabric/results/${election.id}`);
+        return [election.id, data] as const;
       }),
     )
-      .then((entries) => setTallies(Object.fromEntries(entries)))
+      .then((entries) => {
+        setTallies(
+          Object.fromEntries(entries.map(([id, d]) => [id, d.results])),
+        );
+        setTallyMeta(
+          Object.fromEntries(
+            entries.map(([id, d]) => [
+              id,
+              {
+                ocultos: d.resultadosOcultos ?? false,
+                emitidos: d.participacion?.emitidos ?? 0,
+              },
+            ]),
+          ),
+        );
+      })
       .catch(() => {});
   }, [allVoted, activeElections]);
 
@@ -245,28 +267,50 @@ export default function VotingPage() {
                     {total} voto{total !== 1 ? 's' : ''}
                   </span>
                 </div>
-                <div className="space-y-3">
-                  {rows.map((row) => {
-                    const pct =
-                      total > 0 ? Math.round((row.count / total) * 100) : 0;
-                    return (
-                      <div key={row.id}>
-                        <div className="flex justify-between gap-4 text-xs font-bold text-slate-600 mb-1">
-                          <span className="truncate">{row.label}</span>
-                          <span className="shrink-0">
-                            {row.count} · {pct}%
-                          </span>
+                {tallyMeta[election.id]?.ocultos ? (
+                  <div className="rounded-2xl bg-slate-50 border border-slate-100 p-5 text-center">
+                    <p className="text-sm font-bold text-slate-700 mb-1">
+                      Resultados ocultos hasta el cierre
+                    </p>
+                    <p className="text-xs text-slate-500 mb-4">
+                      Para no influir en quienes aún no votan, el conteo por
+                      candidato se revela cuando la elección cierra.
+                    </p>
+                    <div className="inline-flex items-baseline gap-2">
+                      <span className="text-3xl font-black text-indigo-600">
+                        {tallyMeta[election.id]?.emitidos ?? 0}
+                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        voto{tallyMeta[election.id]?.emitidos !== 1 ? 's' : ''}{' '}
+                        emitido
+                        {tallyMeta[election.id]?.emitidos !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {rows.map((row) => {
+                      const pct =
+                        total > 0 ? Math.round((row.count / total) * 100) : 0;
+                      return (
+                        <div key={row.id}>
+                          <div className="flex justify-between gap-4 text-xs font-bold text-slate-600 mb-1">
+                            <span className="truncate">{row.label}</span>
+                            <span className="shrink-0">
+                              {row.count} · {pct}%
+                            </span>
+                          </div>
+                          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-indigo-600 transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-indigo-600 transition-all"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
             );
           })}

@@ -21,21 +21,29 @@ export default function LiveResults() {
     fetchElections: refreshElections,
   } = useElections();
   const [tallies, setTallies] = useState<Record<string, Tally>>({});
+  // Participación por elección (sin revelar por quién). Durante ACTIVA el
+  // backend no manda el desglose; aquí solo mostramos cuántos votaron.
+  const [participacion, setParticipacion] = useState<Record<string, number>>(
+    {},
+  );
   const [loadingTallies, setLoadingTallies] = useState(false);
 
   const fetchAllTallies = useCallback(async () => {
     if (elections.length === 0) return;
     setLoadingTallies(true);
     const newTallies: Record<string, Tally> = {};
+    const newPart: Record<string, number> = {};
     try {
       await Promise.all(
         elections.map(async (e) => {
           if (e.status === 'ACTIVA') {
             try {
-              const { data } = await api.get<{ results?: Tally }>(
-                `/fabric/results/${e.id}`,
-              );
+              const { data } = await api.get<{
+                results?: Tally;
+                participacion?: { emitidos: number };
+              }>(`/fabric/results/${e.id}`);
               newTallies[e.id] = data.results ?? {};
+              newPart[e.id] = data.participacion?.emitidos ?? 0;
             } catch {
               // Silencioso: una elección sin resultados no debe romper el resto
             }
@@ -43,6 +51,7 @@ export default function LiveResults() {
         }),
       );
       setTallies(newTallies);
+      setParticipacion(newPart);
     } finally {
       setLoadingTallies(false);
     }
@@ -101,13 +110,13 @@ export default function LiveResults() {
 
       {displayElections.map((election, idx) => {
         const currentTally = tallies[election.id] || {};
-        const totalVotos = Object.values(currentTally).reduce(
-          (a, b) => a + b,
-          0,
-        );
+        // Durante ACTIVA el desglose viene vacío a propósito; la participación
+        // llega por separado. Se usa esa para los totales.
+        const emitidos = participacion[election.id] ?? 0;
+        const totalVotos = emitidos;
         const habilitados = 100;
-        const emitidos = totalVotos as number;
         const pendientes = Math.max(0, habilitados - emitidos);
+        const resultadosOcultos = election.status === 'ACTIVA';
 
         // Crear lista completa incluyendo blancos y nulos
         const allResults = [
@@ -208,128 +217,142 @@ export default function LiveResults() {
             </div>
 
             {/* Results Grid - Centered */}
-            <div className="flex flex-wrap justify-center gap-5">
-              {sortedResults.map((result) => {
-                const votos = result.votos;
-                const pct =
-                  totalVotos > 0
-                    ? ((votos / totalVotos) * 100).toFixed(1)
-                    : '0.0';
-                const leading = isLeading(votos);
+            {resultadosOcultos ? (
+              <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-10 text-center max-w-2xl mx-auto">
+                <p className="text-lg font-black text-slate-800 uppercase tracking-tight mb-2">
+                  Resultados ocultos hasta el cierre
+                </p>
+                <p className="text-sm text-slate-500 max-w-md mx-auto">
+                  Mientras la votación está abierta, el conteo por candidato no
+                  se publica para no influir en quienes aún no han votado. Solo
+                  se muestra cuántas personas ya votaron. El desglose se
+                  revelará cuando la elección cierre.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap justify-center gap-5">
+                {sortedResults.map((result) => {
+                  const votos = result.votos;
+                  const pct =
+                    totalVotos > 0
+                      ? ((votos / totalVotos) * 100).toFixed(1)
+                      : '0.0';
+                  const leading = isLeading(votos);
 
-                return (
-                  <div
-                    key={result.id}
-                    className="w-full sm:w-[calc(50%-10px)] lg:w-[calc(33.33%-11.25px)] xl:w-[calc(20%-12px)] flex justify-center"
-                  >
+                  return (
                     <div
-                      className={`w-full bg-white rounded-[2rem] overflow-hidden transition-all duration-300 group hover:shadow-2xl ${
-                        leading
-                          ? 'border-2 border-amber-400 shadow-xl shadow-amber-500/20'
-                          : 'border border-slate-200 hover:border-indigo-300'
-                      }`}
+                      key={result.id}
+                      className="w-full sm:w-[calc(50%-10px)] lg:w-[calc(33.33%-11.25px)] xl:w-[calc(20%-12px)] flex justify-center"
                     >
-                      {/* Top accent bar */}
                       <div
-                        className={`h-2 w-full ${
+                        className={`w-full bg-white rounded-[2rem] overflow-hidden transition-all duration-300 group hover:shadow-2xl ${
                           leading
-                            ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400'
-                            : 'bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200 group-hover:from-indigo-200 group-hover:via-indigo-300 group-hover:to-indigo-200'
-                        } transition-all`}
-                      />
+                            ? 'border-2 border-amber-400 shadow-xl shadow-amber-500/20'
+                            : 'border border-slate-200 hover:border-indigo-300'
+                        }`}
+                      >
+                        {/* Top accent bar */}
+                        <div
+                          className={`h-2 w-full ${
+                            leading
+                              ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400'
+                              : 'bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200 group-hover:from-indigo-200 group-hover:via-indigo-300 group-hover:to-indigo-200'
+                          } transition-all`}
+                        />
 
-                      {/* Info Area */}
-                      <div className="p-5 flex flex-col items-center text-center">
-                        {/* Logo or Icon */}
-                        <div className="relative w-20 h-20 rounded-xl bg-white border-2 border-slate-100 shadow-md flex items-center justify-center p-3 mb-4">
-                          {result.isSpecial ? (
-                            <div className="w-full h-full rounded-lg bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
-                              {result.icon === 'blank' ? (
-                                <Minus
-                                  size={32}
-                                  className="text-slate-400"
-                                  strokeWidth={1.5}
-                                />
-                              ) : (
-                                <Ban
-                                  size={32}
-                                  className="text-red-400"
-                                  strokeWidth={1.5}
-                                />
-                              )}
-                            </div>
-                          ) : result.logoFrente &&
-                            result.logoFrente.startsWith('data:') ? (
-                            <img
-                              src={result.logoFrente}
-                              alt={result.frontName}
-                              className="w-full h-full object-contain"
-                            />
-                          ) : result.logoFrente ? (
-                            <img
-                              src={result.logoFrente}
-                              alt={result.frontName}
-                              className="w-full h-full object-contain"
-                            />
-                          ) : (
-                            <div className="w-full h-full rounded-lg bg-gradient-to-br from-indigo-100 to-indigo-50 flex items-center justify-center">
-                              <Users
-                                size={32}
-                                className="text-indigo-400"
-                                strokeWidth={1.5}
+                        {/* Info Area */}
+                        <div className="p-5 flex flex-col items-center text-center">
+                          {/* Logo or Icon */}
+                          <div className="relative w-20 h-20 rounded-xl bg-white border-2 border-slate-100 shadow-md flex items-center justify-center p-3 mb-4">
+                            {result.isSpecial ? (
+                              <div className="w-full h-full rounded-lg bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
+                                {result.icon === 'blank' ? (
+                                  <Minus
+                                    size={32}
+                                    className="text-slate-400"
+                                    strokeWidth={1.5}
+                                  />
+                                ) : (
+                                  <Ban
+                                    size={32}
+                                    className="text-red-400"
+                                    strokeWidth={1.5}
+                                  />
+                                )}
+                              </div>
+                            ) : result.logoFrente &&
+                              result.logoFrente.startsWith('data:') ? (
+                              <img
+                                src={result.logoFrente}
+                                alt={result.frontName}
+                                className="w-full h-full object-contain"
                               />
-                            </div>
-                          )}
+                            ) : result.logoFrente ? (
+                              <img
+                                src={result.logoFrente}
+                                alt={result.frontName}
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <div className="w-full h-full rounded-lg bg-gradient-to-br from-indigo-100 to-indigo-50 flex items-center justify-center">
+                                <Users
+                                  size={32}
+                                  className="text-indigo-400"
+                                  strokeWidth={1.5}
+                                />
+                              </div>
+                            )}
 
-                          {/* Leading Badge */}
-                          {leading && (
-                            <div className="absolute -top-2 -right-2 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 px-2 py-1 rounded-full text-[7px] font-black uppercase tracking-widest flex items-center gap-0.5 shadow-lg shadow-amber-500/30">
-                              <TrendingUp size={8} strokeWidth={3} />
-                              Líder
-                            </div>
-                          )}
-                        </div>
+                            {/* Leading Badge */}
+                            {leading && (
+                              <div className="absolute -top-2 -right-2 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 px-2 py-1 rounded-full text-[7px] font-black uppercase tracking-widest flex items-center gap-0.5 shadow-lg shadow-amber-500/30">
+                                <TrendingUp size={8} strokeWidth={3} />
+                                Líder
+                              </div>
+                            )}
+                          </div>
 
-                        {/* Name */}
-                        <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-tight leading-tight line-clamp-2 h-8 flex items-center mb-2">
-                          {result.name}
-                        </h4>
+                          {/* Name */}
+                          <h4 className="text-[11px] font-black text-slate-900 uppercase tracking-tight leading-tight line-clamp-2 h-8 flex items-center mb-2">
+                            {result.name}
+                          </h4>
 
-                        {/* Front name */}
-                        <span className="text-[8px] font-black uppercase text-indigo-500 tracking-widest mb-4 line-clamp-1">
-                          {result.frontName}
-                        </span>
+                          {/* Front name */}
+                          <span className="text-[8px] font-black uppercase text-indigo-500 tracking-widest mb-4 line-clamp-1">
+                            {result.frontName}
+                          </span>
 
-                        {/* Result Badge */}
-                        <div className="w-full mt-auto relative">
-                          {/* Gradient background glow */}
-                          <div
-                            className={`absolute inset-0 rounded-2xl blur-lg opacity-40 ${
-                              leading ? 'bg-amber-500' : 'bg-slate-900'
-                            }`}
-                          />
+                          {/* Result Badge */}
+                          <div className="w-full mt-auto relative">
+                            {/* Gradient background glow */}
+                            <div
+                              className={`absolute inset-0 rounded-2xl blur-lg opacity-40 ${
+                                leading ? 'bg-amber-500' : 'bg-slate-900'
+                              }`}
+                            />
 
-                          <div
-                            className={`relative w-full rounded-2xl p-4 shadow-lg ${
-                              leading
-                                ? 'bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-amber-950 shadow-amber-500/40'
-                                : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white'
-                            }`}
-                          >
-                            <div className="text-3xl font-black italic tracking-tighter leading-none">
-                              {pct}%
-                            </div>
-                            <div className="text-[9px] font-bold uppercase opacity-70 mt-1">
-                              {votos} {votos === 1 ? 'Voto' : 'Votos'}
+                            <div
+                              className={`relative w-full rounded-2xl p-4 shadow-lg ${
+                                leading
+                                  ? 'bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-amber-950 shadow-amber-500/40'
+                                  : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white'
+                              }`}
+                            >
+                              <div className="text-3xl font-black italic tracking-tighter leading-none">
+                                {pct}%
+                              </div>
+                              <div className="text-[9px] font-bold uppercase opacity-70 mt-1">
+                                {votos} {votos === 1 ? 'Voto' : 'Votos'}
+                              </div>
                             </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         );
       })}

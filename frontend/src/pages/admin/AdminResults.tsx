@@ -42,7 +42,9 @@ export default function AdminResults() {
     setLoadingTallies(true);
     try {
       const { data } = await api.get<{ results?: Tally }>(
-        `/fabric/results/${electionId}`,
+        // Endpoint administrativo: el admin sí ve el desglose aunque la
+        // elección esté ACTIVA (acceso auditado por rol).
+        `/fabric/results/${electionId}/admin`,
       );
       setTallies((prev) => ({ ...prev, [electionId]: data.results ?? {} }));
     } catch (err) {
