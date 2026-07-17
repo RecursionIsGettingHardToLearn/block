@@ -22,6 +22,8 @@ interface FabricChannel {
   creadoEn: string;
   /** Peers unidos al canal según Fabric (lo reporta el backend). */
   peers?: { id: string; nombre: string }[];
+  /** true si el chaincode ya está comprometido en el canal. */
+  chaincodeListo?: boolean;
 }
 
 interface FabricNode {
@@ -648,18 +650,29 @@ export default function ChannelsPage() {
                         onClick={() => handleDeployChaincode(ch.nombre)}
                         disabled={
                           busyAction === `cc:${ch.nombre}` ||
-                          activeNodes.length === 0
+                          ch.chaincodeListo === true ||
+                          !ch.peers?.length
                         }
                         className="flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold text-white border-0 cursor-pointer disabled:opacity-50"
                         style={{ background: 'var(--brand)' }}
-                        title="Instalar, aprobar y confirmar chaincode en este canal"
+                        title={
+                          ch.chaincodeListo
+                            ? 'El chaincode ya está desplegado en este canal'
+                            : !ch.peers?.length
+                              ? 'Une al menos un peer antes de desplegar el chaincode'
+                              : 'Instalar, aprobar y confirmar chaincode en este canal'
+                        }
                       >
                         {busyAction === `cc:${ch.nombre}` ? (
                           <Loader2 size={12} className="animate-spin" />
+                        ) : ch.chaincodeListo ? (
+                          <CheckCircle2 size={12} />
                         ) : (
                           <Rocket size={12} />
                         )}
-                        Desplegar chaincode
+                        {ch.chaincodeListo
+                          ? 'Chaincode listo'
+                          : 'Desplegar chaincode'}
                       </button>
                     </div>
                   </td>

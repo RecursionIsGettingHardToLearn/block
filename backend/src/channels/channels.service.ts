@@ -38,6 +38,8 @@ export interface FabricChannel {
   creadoEn: Date;
   /** Peers unidos al canal según el propio Fabric (solo los activos responden). */
   peers?: { id: string; nombre: string }[];
+  /** true si el chaincode ya está comprometido en el canal (según Fabric). */
+  chaincodeListo?: boolean;
 }
 
 interface FabricNodeRow {
@@ -172,12 +174,39 @@ export class ChannelsService {
         }
       }),
     );
-    return channels.map((ch) => ({
-      ...ch,
-      peers: (porCanal.get(ch.nombre) ?? []).sort((a, b) =>
-        a.nombre.localeCompare(b.nombre),
-      ),
-    }));
+    // ¿El chaincode ya está comprometido? Se pregunta a Fabric con
+    // querycommitted, usando cualquier peer unido al canal. Sin peers unidos,
+    // no puede estarlo todavía.
+    const nodePorId = new Map(nodes.map((n) => [n.id, n]));
+    return Promise.all(
+      channels.map(async (ch) => {
+        const peers = (porCanal.get(ch.nombre) ?? []).sort((a, b) =>
+          a.nombre.localeCompare(b.nombre),
+        );
+        const algunPeer = peers.length ? nodePorId.get(peers[0].id) : undefined;
+        const chaincodeListo = algunPeer
+          ? await this.isChaincodeCommitted(ch.nombre, algunPeer)
+          : false;
+        return { ...ch, peers, chaincodeListo };
+      }),
+    );
+  }
+
+  /** ¿Está el chaincode comprometido en el canal? Lo dice el propio Fabric. */
+  private async isChaincodeCommitted(
+    channelName: string,
+    node: FabricNodeRow,
+  ): Promise<boolean> {
+    try {
+      const { stdout } = await execAsync(
+        `docker exec -e "CORE_PEER_ADDRESS=${this.peerAddress(node)}" -e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}" -e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}" cli peer lifecycle chaincode querycommitted -C ${channelName} --name ${CC_NAME}`,
+        { timeout: 15_000 },
+      );
+      // querycommitted imprime «Version: ...» cuando existe; error si no.
+      return /Version:/i.test(stdout);
+    } catch {
+      return false;
+    }
   }
 
   /** Canales a los que un peer ya está unido, según el propio peer. */
