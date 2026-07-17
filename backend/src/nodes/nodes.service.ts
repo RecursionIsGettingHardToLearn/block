@@ -19,7 +19,7 @@ import {
 import { DatabaseService } from '../database/database.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { DeployNodeDto } from './dto/deploy-node.dto';
-import { CRYPTO_BASE } from '../common/fabric-paths';
+import { CRYPTO_BASE, PEER_ORG_DIR } from '../common/fabric-paths';
 
 const execAsync = promisify(exec);
 
@@ -407,6 +407,19 @@ export class NodesService {
         );
       }
     }
+
+    // Sus certificados también son suyos: dejarlos en disco solo bloquea
+    // volver a usar el nombre (la guarda del despliegue los detectaría como
+    // un peer existente). Los peers base del compose nunca llegan aquí.
+    const cryptoDir = path.join(PEER_ORG_DIR, 'peers', node.hostAlias);
+    try {
+      await fsp.rm(cryptoDir, { recursive: true, force: true });
+      this.logger.log(`Certificados de ${node.hostAlias} eliminados`);
+    } catch (err: unknown) {
+      this.logger.warn(
+        `No se pudieron eliminar los certificados de ${node.hostAlias}: ${getErrorMessage(err)}`,
+      );
+    }
   }
 
   /**
@@ -540,13 +553,36 @@ export class NodesService {
     log(`[INFO] Desplegando ${peerName}.${ORG} → puerto ${peerPort}`);
 
     // ── 0. Verificar que no existe ───────────────────────────────────────────
+    // Que haya certificados en disco no significa que el peer exista: puede
+    // ser un peer vivo (con contenedor o registro) o los escombros de un
+    // despliegue anterior que falló o fue eliminado. Solo el primero bloquea;
+    // los escombros se limpian y se sigue, porque los certificados se firman
+    // con openssl contra la clave de la CA en disco y regenerarlos es trivial.
+    let cryptoPrevio = true;
     try {
       await fsp.access(mspDir);
-      throw new InternalServerErrorException(
-        `Ya existe crypto para ${peerName}. Usa otro nombre.`,
+    } catch {
+      cryptoPrevio = false;
+    }
+    if (cryptoPrevio) {
+      const { rows: registrado } = await this.db.query<{ id: string }>(
+        `SELECT id FROM nodos_fabric WHERE nombre = $1`,
+        [peerName],
       );
-    } catch (err: unknown) {
-      if (err instanceof InternalServerErrorException) throw err;
+      const contenedor = await this.inspectContainer(`${peerName}.${ORG}`);
+      if (registrado.length > 0 || contenedor) {
+        throw new ConflictException(
+          `Ya existe un peer llamado ${peerName} (${
+            registrado.length > 0
+              ? 'registrado en la base'
+              : 'con contenedor en Docker'
+          }). Usa otro nombre.`,
+        );
+      }
+      log(
+        `[WARN] Certificados huérfanos de un intento anterior de ${peerName}; se eliminan y regeneran`,
+      );
+      await fsp.rm(peerDir, { recursive: true, force: true });
     }
 
     // ── 1. Crear estructura de directorios ───────────────────────────────────
