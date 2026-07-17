@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { randomUUID } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import * as path from 'path';
@@ -21,6 +21,9 @@ import { CreateChannelDto } from './dto/create-channel.dto';
 import { CONFIGTX_PATH, CRYPTO_BASE } from '../common/fabric-paths';
 
 const execAsync = promisify(exec);
+// execFile pasa los argumentos como array, sin shell que reinterprete comillas:
+// imprescindible para el JSON de GetMetadata, que se rompe con exec + sh -c.
+const execFileAsync = promisify(execFile);
 
 const ORDERER_CA =
   '/crypto/ordererOrganizations/ficct.edu.bo/orderers/orderer.ficct.edu.bo/msp/tlscacerts/tlsca.ficct.edu.bo-cert.pem';
@@ -255,11 +258,10 @@ export class ChannelsService {
     channelName: string,
     node: FabricNodeRow,
   ): Promise<'AUSENTE' | 'DESACTUALIZADO' | 'LISTO'> {
-    const env = `-e "CORE_PEER_ADDRESS=${this.peerAddress(node)}" -e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}" -e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}"`;
-    // ¿Hay algo comprometido?
+    // ¿Hay algo comprometido? (querycommitted no lleva JSON: exec normal sirve)
     try {
       const { stdout } = await execAsync(
-        `docker exec ${env} cli peer lifecycle chaincode querycommitted -C ${channelName} --name ${CC_NAME}`,
+        `docker exec -e "CORE_PEER_ADDRESS=${this.peerAddress(node)}" -e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}" -e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}" cli peer lifecycle chaincode querycommitted -C ${channelName} --name ${CC_NAME}`,
         { timeout: 15_000 },
       );
       if (!/Version:/i.test(stdout)) return 'AUSENTE';
@@ -269,14 +271,33 @@ export class ChannelsService {
 
     // Hay chaincode: ¿expone el contrato que el backend necesita? Se consulta
     // GetMetadata (la API estándar de introspección de Fabric) y se busca el
-    // nombre del contrato. El JSON va en un archivo para evitar el infierno de
-    // escapado de comillas que hace fallar el comando en algunos shells.
+    // nombre del contrato. Se usa execFile con los argumentos como array: así
+    // el JSON viaja intacto, sin un shell que reinterprete sus comillas (que
+    // era justo lo que fallaba con exec + sh -c).
     try {
-      const ctorFile = `/tmp/getmeta-${channelName}.json`;
       const ctor =
         '{"function":"org.hyperledger.fabric:GetMetadata","Args":[]}';
-      const { stdout } = await execAsync(
-        `docker exec ${env} cli sh -c 'echo '\''${ctor}'\'' > ${ctorFile} && peer chaincode query -C ${channelName} -n ${CC_NAME} -c "$(cat ${ctorFile})"'`,
+      const { stdout } = await execFileAsync(
+        'docker',
+        [
+          'exec',
+          '-e',
+          `CORE_PEER_ADDRESS=${this.peerAddress(node)}`,
+          '-e',
+          `CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}`,
+          '-e',
+          `CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}`,
+          'cli',
+          'peer',
+          'chaincode',
+          'query',
+          '-C',
+          channelName,
+          '-n',
+          CC_NAME,
+          '-c',
+          ctor,
+        ],
         { timeout: 15_000 },
       );
       return stdout.includes(CONTRACT_NAME) ? 'LISTO' : 'DESACTUALIZADO';
