@@ -9,6 +9,7 @@ import UsersPage from '../pages/admin/UsersPage';
 import ChannelsPage from '../pages/admin/ChannelsPage';
 import NodesPage from '../pages/admin/NodesPage';
 import CAPage from '../pages/admin/CAPage';
+import ReportsPage from '../pages/admin/ReportsPage';
 import VotingPage from '../pages/voter/VotingPage';
 import AuditorDashboard from '../pages/auditor/AuditorDashboard';
 import VoteValidator from '../pages/auditor/VoteValidator';
@@ -65,6 +66,7 @@ export default function AppRouter() {
           <Route path="nodos" element={<NodesPage />} />
           <Route path="canales" element={<ChannelsPage />} />
           <Route path="ca" element={<CAPage />} />
+          <Route path="reportes" element={<ReportsPage />} />
         </Route>
 
         {/* ── VOTANTE ───────────────────────────────────────────────────── */}
@@ -97,6 +99,7 @@ export default function AppRouter() {
           <Route path="resultados" element={<AuditorDashboard />} />
           <Route path="validar" element={<VoteValidator />} />
           <Route path="blockchain" element={<AuditLogs />} />
+          <Route path="reportes" element={<ReportsPage />} />
         </Route>
 
         {/* URLs antiguas → redirigen al equivalente nuevo */}
