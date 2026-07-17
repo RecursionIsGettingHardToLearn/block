@@ -10,7 +10,11 @@ import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
-import { getExecErrorDetail, getExecErrorSummary } from '../common/errors';
+import {
+  getErrorMessage,
+  getExecErrorDetail,
+  getExecErrorSummary,
+} from '../common/errors';
 import { DatabaseService } from '../database/database.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { DeployNodeDto } from './dto/deploy-node.dto';
@@ -223,19 +227,37 @@ export class NodesService {
       return 0;
     }
     const nombre = containerName.split('.')[0];
-    const { rows } = await this.db.query<{ id: string }>(
-      `INSERT INTO nodos_fabric (nombre, endpoint, host_alias, activo)
-       VALUES ($1, $2, $3, true)
-       ON CONFLICT (nombre) DO NOTHING
-       RETURNING id`,
-      [nombre, `localhost:${port}`, containerName],
-    );
-    if (rows.length) {
-      this.logger.log(
-        `Peer descubierto en Docker y registrado: ${containerName} (localhost:${port})`,
+    try {
+      const { rows } = await this.db.query<{ id: string }>(
+        `INSERT INTO nodos_fabric (nombre, endpoint, host_alias, activo)
+         VALUES ($1, $2, $3, true)
+         ON CONFLICT (nombre) DO NOTHING
+         RETURNING id`,
+        [nombre, `localhost:${port}`, containerName],
       );
+      if (rows.length) {
+        this.logger.log(
+          `Peer descubierto en Docker y registrado: ${containerName} (localhost:${port})`,
+        );
+      }
+      return rows.length;
+    } catch (err: unknown) {
+      // Un fallo al registrar (p. ej. una base cuyo esquema derivó del de
+      // database.sql) no debe tumbar el listado completo de nodos: se avisa
+      // con una pista accionable y la página sigue mostrando lo registrado.
+      const code =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: unknown }).code)
+          : '';
+      const hint =
+        code === '42P10'
+          ? ' — a la tabla nodos_fabric le falta la restricción UNIQUE (nombre) que declara database.sql; ejecutar: ALTER TABLE nodos_fabric ADD CONSTRAINT nodos_fabric_nombre_key UNIQUE (nombre);'
+          : '';
+      this.logger.warn(
+        `No se pudo registrar ${containerName}: ${getErrorMessage(err)}${hint}`,
+      );
+      return 0;
     }
-    return rows.length;
   }
 
   async findFirstActive(): Promise<{
