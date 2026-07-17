@@ -1,162 +1,84 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  FileText,
-  FileSpreadsheet,
-  Send,
-  Bot,
+  Sparkles,
   Loader2,
   BarChart3,
-  Mic,
-  Square,
-  Volume2,
+  FileText,
+  FileSpreadsheet,
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  Legend,
+} from 'recharts';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas';
 import api from '../../api/axios.config';
 import { useAuthStore } from '../../store/auth.store';
 import { useElections } from '../../hooks/useElections';
 
-interface NetworkReport {
-  generadoEn: string;
-  usuarios: { total: number; porRol: Record<string, number> };
-  elecciones: { total: number; porEstado: Record<string, number> };
-  canales: { nombre: string; descripcion: string | null; activo: boolean }[];
-  nodos: { nombre: string; endpoint: string; activo: boolean }[];
-  votos: { confirmados: number; pendientes: number; fallidos: number };
+interface ReportSpec {
+  titulo: string;
+  tipoVisual: 'bar' | 'pie' | 'line' | 'table';
+  insight: string;
+  datos?: { etiqueta: string; valor: number }[];
+  tabla?: { columnas: string[]; filas: string[][] };
 }
 
-interface ElectionReport {
-  generadoEn: string;
-  eleccion: {
-    id: string;
-    titulo: string;
-    estado: string;
-    canal: string;
-    inicio: string;
-    fin: string;
-  };
-  padron: { total: number; votaron: number; noVotaron: number };
-  participacionPct: number;
-  resultados:
-    | { disponible: false; motivo: string }
-    | {
-        disponible: true;
-        candidatos: { nombre: string; frente: string; votos: number }[];
-        blancos: number;
-        nulos: number;
-      };
-}
+const COLORS = [
+  '#6366f1',
+  '#10b981',
+  '#f59e0b',
+  '#ef4444',
+  '#8b5cf6',
+  '#06b6d4',
+  '#ec4899',
+  '#84cc16',
+];
 
-interface ChatTurn {
-  role: 'user' | 'assistant';
-  content: string;
-}
+const SUGERENCIAS_ADMIN = [
+  'Usuarios por rol',
+  'Elecciones por estado',
+  'Estado de los nodos',
+  'Votos confirmados, pendientes y fallidos',
+];
+const SUGERENCIAS_AUDITOR = [
+  'Participacion de esta eleccion',
+  'Votaron vs. no votaron',
+  'Resultados por candidato',
+  'Tabla con el padron y la participacion',
+];
 
 export default function ReportsPage() {
   const isAdmin = useAuthStore((s) => s.isAdmin());
   const tipo: 'red' | 'eleccion' = isAdmin ? 'red' : 'eleccion';
   const { elections } = useElections();
 
-  const [networkData, setNetworkData] = useState<NetworkReport | null>(null);
-  const [electionData, setElectionData] = useState<ElectionReport | null>(null);
   const [selectedElection, setSelectedElection] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-
   const [aiEnabled, setAiEnabled] = useState(false);
-  const [chat, setChat] = useState<ChatTurn[]>([]);
-  const [question, setQuestion] = useState('');
-  const [asking, setAsking] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [peticion, setPeticion] = useState('');
+  const [spec, setSpec] = useState<ReportSpec | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const visualRef = useRef<HTMLDivElement>(null);
 
-  // Grabación de voz para dictar la pregunta (Whisper) y reproducción de la
-  // respuesta (TTS). El micrófono usa MediaRecorder del navegador; el audio se
-  // manda al backend, que llama a OpenAI (la clave nunca sale del servidor).
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-
-  async function toggleRecording() {
-    if (recording) {
-      mediaRecorderRef.current?.stop();
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop()); // libera el micrófono
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await transcribeAudio(blob);
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setRecording(true);
-    } catch {
-      alert(
-        'No se pudo acceder al micrófono. Revisa los permisos del navegador.',
-      );
-    }
-  }
-
-  async function transcribeAudio(blob: Blob) {
-    setRecording(false);
-    setTranscribing(true);
-    try {
-      const form = new FormData();
-      form.append('audio', blob, 'pregunta.webm');
-      const { data } = await api.post<{ texto: string }>(
-        '/reports/transcribe',
-        form,
-        { headers: { 'Content-Type': 'multipart/form-data' } },
-      );
-      // La transcripción se coloca en el input para que el usuario la revise
-      // antes de enviarla (no se dispara sola).
-      setQuestion((prev) => (prev ? `${prev} ${data.texto}` : data.texto));
-    } catch {
-      alert('No se pudo transcribir el audio.');
-    } finally {
-      setTranscribing(false);
-    }
-  }
-
-  // Lee en voz alta la última respuesta del asistente (TTS).
-  async function speakLast() {
-    const last = [...chat].reverse().find((t) => t.role === 'assistant');
-    if (!last || speaking) return;
-    setSpeaking(true);
-    try {
-      const res = await api.post(
-        '/reports/speak',
-        { texto: last.content },
-        { responseType: 'blob' },
-      );
-      const url = URL.createObjectURL(res.data as Blob);
-      const audio = new Audio(url);
-      audio.onended = () => {
-        setSpeaking(false);
-        URL.revokeObjectURL(url);
-      };
-      await audio.play();
-    } catch {
-      setSpeaking(false);
-      alert('No se pudo reproducir el audio.');
-    }
-  }
-
-  // Elecciones asignables (no borradores) para el selector del auditor.
   const reportableElections = useMemo(
     () => elections.filter((e) => e.status !== 'BORRADOR'),
     [elections],
   );
 
-  // ¿Está configurado el chat con IA en el backend?
   useEffect(() => {
     api
       .get<{ enabled: boolean }>('/reports/ai-status')
@@ -164,18 +86,6 @@ export default function ReportsPage() {
       .catch(() => setAiEnabled(false));
   }, []);
 
-  // Cargar el reporte de red (admin) al entrar.
-  useEffect(() => {
-    if (tipo !== 'red') return;
-    setLoading(true);
-    api
-      .get<NetworkReport>('/reports/network')
-      .then(({ data }) => setNetworkData(data))
-      .catch(() => setNetworkData(null))
-      .finally(() => setLoading(false));
-  }, [tipo]);
-
-  // Preseleccionar la primera elección para el auditor.
   useEffect(() => {
     if (tipo !== 'eleccion') return;
     if (!selectedElection && reportableElections.length > 0) {
@@ -183,221 +93,108 @@ export default function ReportsPage() {
     }
   }, [tipo, reportableElections, selectedElection]);
 
-  // Cargar el reporte de la elección seleccionada.
   useEffect(() => {
-    if (tipo !== 'eleccion' || !selectedElection) return;
-    setLoading(true);
-    setChat([]);
-    api
-      .get<ElectionReport>(`/reports/election/${selectedElection}`)
-      .then(({ data }) => setElectionData(data))
-      .catch(() => setElectionData(null))
-      .finally(() => setLoading(false));
-  }, [tipo, selectedElection]);
+    setSpec(null);
+  }, [selectedElection]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chat]);
-
-  async function ask() {
-    const q = question.trim();
-    if (!q || asking) return;
-    setQuestion('');
-    const nuevoHistorial = [...chat, { role: 'user' as const, content: q }];
-    setChat(nuevoHistorial);
-    setAsking(true);
+  async function generar(texto?: string) {
+    const q = (texto ?? peticion).trim();
+    if (!q || generating) return;
+    if (tipo === 'eleccion' && !selectedElection) {
+      setError('Selecciona una eleccion primero.');
+      return;
+    }
+    setGenerating(true);
+    setError(null);
+    setSpec(null);
     try {
-      const { data } = await api.post<{ respuesta: string }>('/reports/chat', {
+      const { data } = await api.post<ReportSpec>('/reports/generate', {
         tipo,
         electionId: tipo === 'eleccion' ? selectedElection : undefined,
-        pregunta: q,
-        historial: chat,
+        peticion: q,
       });
-      setChat([
-        ...nuevoHistorial,
-        { role: 'assistant', content: data.respuesta },
-      ]);
-    } catch {
-      setChat([
-        ...nuevoHistorial,
-        {
-          role: 'assistant',
-          content:
-            'No se pudo obtener respuesta del asistente. Revisa la configuración del servicio de IA.',
-        },
-      ]);
+      setSpec(data);
+    } catch (err: unknown) {
+      const detalle = (
+        err as { response?: { data?: { message?: string | string[] } } }
+      )?.response?.data?.message;
+      const msg = Array.isArray(detalle) ? detalle[0] : detalle;
+      setError(msg ?? 'No se pudo generar el reporte.');
     } finally {
-      setAsking(false);
+      setGenerating(false);
     }
   }
 
-  // ── Exportar a PDF ────────────────────────────────────────────────────────
-  function exportPdf() {
+  async function exportarPdf() {
+    if (!spec) return;
     const doc = new jsPDF();
-    const fecha = new Date().toLocaleString('es-BO');
+    doc.setFontSize(16);
+    doc.text(spec.titulo, 14, 18);
+    doc.setFontSize(10);
+    doc.setTextColor(90);
+    const insight = doc.splitTextToSize(spec.insight, 180) as string[];
+    doc.text(insight, 14, 26);
+    let y = 26 + insight.length * 5 + 4;
 
-    if (tipo === 'red' && networkData) {
-      doc.setFontSize(16);
-      doc.text('Reporte de Red — FICCT E-Voting', 14, 18);
-      doc.setFontSize(10);
-      doc.text(`Generado: ${fecha}`, 14, 25);
-
+    if (spec.tipoVisual === 'table' && spec.tabla) {
       autoTable(doc, {
-        startY: 32,
-        head: [['Usuarios por rol', 'Cantidad']],
-        body: Object.entries(networkData.usuarios.porRol).map(([r, n]) => [
-          r,
-          String(n),
-        ]),
+        startY: y,
+        head: [spec.tabla.columnas],
+        body: spec.tabla.filas,
       });
-      autoTable(doc, {
-        head: [['Elecciones por estado', 'Cantidad']],
-        body: Object.entries(networkData.elecciones.porEstado).map(([e, n]) => [
-          e,
-          String(n),
-        ]),
-      });
-      autoTable(doc, {
-        head: [['Nodo', 'Endpoint', 'Estado']],
-        body: networkData.nodos.map((n) => [
-          n.nombre,
-          n.endpoint,
-          n.activo ? 'Activo' : 'Inactivo',
-        ]),
-      });
-      autoTable(doc, {
-        head: [['Canal', 'Activo']],
-        body: networkData.canales.map((c) => [
-          c.nombre,
-          c.activo ? 'Sí' : 'No',
-        ]),
-      });
-      autoTable(doc, {
-        head: [['Votos', 'Cantidad']],
-        body: [
-          ['Confirmados', String(networkData.votos.confirmados)],
-          ['Pendientes', String(networkData.votos.pendientes)],
-          ['Fallidos', String(networkData.votos.fallidos)],
-        ],
-      });
-      doc.save('reporte-red.pdf');
-    } else if (tipo === 'eleccion' && electionData) {
-      const e = electionData;
-      doc.setFontSize(16);
-      doc.text('Reporte de Elección', 14, 18);
-      doc.setFontSize(11);
-      doc.text(e.eleccion.titulo, 14, 26);
-      doc.setFontSize(10);
-      doc.text(`Generado: ${fecha}`, 14, 33);
-
-      autoTable(doc, {
-        startY: 40,
-        head: [['Dato', 'Valor']],
-        body: [
-          ['Estado', e.eleccion.estado],
-          ['Canal', e.eleccion.canal],
-          ['Padrón', String(e.padron.total)],
-          ['Votaron', String(e.padron.votaron)],
-          ['No votaron', String(e.padron.noVotaron)],
-          ['Participación', `${e.participacionPct}%`],
-        ],
-      });
-      if (e.resultados.disponible) {
-        autoTable(doc, {
-          head: [['Candidato', 'Frente', 'Votos']],
-          body: [
-            ...e.resultados.candidatos.map((c) => [
-              c.nombre,
-              c.frente,
-              String(c.votos),
-            ]),
-            ['Votos blancos', '—', String(e.resultados.blancos)],
-            ['Votos nulos', '—', String(e.resultados.nulos)],
-          ],
+    } else if (spec.datos) {
+      if (visualRef.current) {
+        const canvas = await html2canvas(visualRef.current, {
+          backgroundColor: '#ffffff',
+          scale: 2,
         });
-      } else {
-        autoTable(doc, {
-          head: [['Resultados']],
-          body: [[e.resultados.motivo]],
-        });
+        const img = canvas.toDataURL('image/png');
+        const w = 180;
+        const h = (canvas.height / canvas.width) * w;
+        doc.addImage(img, 'PNG', 14, y, w, h);
+        y += h + 6;
       }
-      doc.save(`reporte-eleccion-${e.eleccion.titulo}.pdf`);
+      autoTable(doc, {
+        startY: y,
+        head: [['Etiqueta', 'Valor']],
+        body: spec.datos.map((d) => [d.etiqueta, String(d.valor)]),
+      });
     }
+    doc.save(`${spec.titulo}.pdf`);
   }
 
-  // ── Exportar a Excel ──────────────────────────────────────────────────────
-  function exportExcel() {
+  function exportarExcel() {
+    if (!spec) return;
     const wb = XLSX.utils.book_new();
-
-    if (tipo === 'red' && networkData) {
-      const resumen = [
-        ['Reporte de Red — FICCT E-Voting'],
-        ['Generado', new Date().toLocaleString('es-BO')],
-        [],
-        ['Usuarios por rol', 'Cantidad'],
-        ...Object.entries(networkData.usuarios.porRol),
-        [],
-        ['Elecciones por estado', 'Cantidad'],
-        ...Object.entries(networkData.elecciones.porEstado),
-        [],
-        ['Votos', 'Cantidad'],
-        ['Confirmados', networkData.votos.confirmados],
-        ['Pendientes', networkData.votos.pendientes],
-        ['Fallidos', networkData.votos.fallidos],
-      ];
-      XLSX.utils.book_append_sheet(
-        wb,
-        XLSX.utils.aoa_to_sheet(resumen),
-        'Resumen',
-      );
-      XLSX.utils.book_append_sheet(
-        wb,
-        XLSX.utils.json_to_sheet(networkData.nodos),
-        'Nodos',
-      );
-      XLSX.utils.book_append_sheet(
-        wb,
-        XLSX.utils.json_to_sheet(networkData.canales),
-        'Canales',
-      );
-      XLSX.writeFile(wb, 'reporte-red.xlsx');
-    } else if (tipo === 'eleccion' && electionData) {
-      const e = electionData;
-      const resumen = [
-        ['Reporte de Elección'],
-        ['Título', e.eleccion.titulo],
-        ['Estado', e.eleccion.estado],
-        ['Canal', e.eleccion.canal],
-        ['Generado', new Date().toLocaleString('es-BO')],
-        [],
-        ['Padrón', e.padron.total],
-        ['Votaron', e.padron.votaron],
-        ['No votaron', e.padron.noVotaron],
-        ['Participación %', e.participacionPct],
-      ];
-      XLSX.utils.book_append_sheet(
-        wb,
-        XLSX.utils.aoa_to_sheet(resumen),
-        'Resumen',
-      );
-      if (e.resultados.disponible) {
-        XLSX.utils.book_append_sheet(
-          wb,
-          XLSX.utils.json_to_sheet(e.resultados.candidatos),
-          'Resultados',
-        );
-      }
-      XLSX.writeFile(wb, `reporte-eleccion-${e.eleccion.titulo}.xlsx`);
+    const encabezado = [[spec.titulo], [spec.insight], []];
+    let sheet;
+    if (spec.tipoVisual === 'table' && spec.tabla) {
+      sheet = XLSX.utils.aoa_to_sheet([
+        ...encabezado,
+        spec.tabla.columnas,
+        ...spec.tabla.filas,
+      ]);
+    } else if (spec.datos) {
+      sheet = XLSX.utils.aoa_to_sheet([
+        ...encabezado,
+        ['Etiqueta', 'Valor'],
+        ...spec.datos.map((d) => [d.etiqueta, d.valor]),
+      ]);
+    } else {
+      sheet = XLSX.utils.aoa_to_sheet(encabezado);
     }
+    XLSX.utils.book_append_sheet(wb, sheet, 'Reporte');
+    XLSX.writeFile(wb, `${spec.titulo}.xlsx`);
   }
 
-  const hasData = tipo === 'red' ? !!networkData : !!electionData;
+  const sugerencias = isAdmin ? SUGERENCIAS_ADMIN : SUGERENCIAS_AUDITOR;
+  const chartData =
+    spec?.datos?.map((d) => ({ name: d.etiqueta, valor: d.valor })) ?? [];
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col gap-6 pb-32">
-      {/* Header */}
+    <div className="max-w-4xl mx-auto flex flex-col gap-6 pb-32">
       <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-        <div className="flex items-center gap-3 mb-1">
+        <div className="flex items-center gap-3">
           <div className="w-11 h-11 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
             <BarChart3 size={22} />
           </div>
@@ -406,19 +203,17 @@ export default function ReportsPage() {
               {isAdmin ? 'Reportes de la Red' : 'Reportes de Elecciones'}
             </h2>
             <p className="text-xs text-slate-400">
-              {isAdmin
-                ? 'Estado general del sistema: usuarios, elecciones, canales, nodos y votos.'
-                : 'Participación y resultados por elección.'}
+              Describe el reporte que necesitas y la IA generara la
+              visualizacion. Luego puedes exportarla.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Selector de elección (solo auditor / elección) */}
       {tipo === 'eleccion' && (
         <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3">
           <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 shrink-0">
-            Elección
+            Eleccion
           </label>
           <select
             value={selectedElection}
@@ -437,188 +232,190 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Botones de descarga */}
-      <div className="flex flex-wrap gap-3">
-        <button
-          onClick={exportPdf}
-          disabled={!hasData || loading}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-red-600 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-        >
-          <FileText size={16} />
-          Descargar PDF
-        </button>
-        <button
-          onClick={exportExcel}
-          disabled={!hasData || loading}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-        >
-          <FileSpreadsheet size={16} />
-          Descargar Excel
-        </button>
-        {loading && (
-          <span className="flex items-center gap-2 text-sm text-slate-400">
-            <Loader2 size={16} className="animate-spin" />
-            Cargando datos…
-          </span>
-        )}
-      </div>
+      {!aiEnabled ? (
+        <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm text-center text-sm text-slate-400">
+          El generador con IA no esta configurado. Define{' '}
+          <code className="text-slate-600">OPENAI_API_KEY</code> en el backend
+          para activarlo.
+        </div>
+      ) : (
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="flex gap-2">
+            <input
+              value={peticion}
+              onChange={(e) => setPeticion(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && generar()}
+              placeholder="Ej: usuarios por rol, participacion por estado..."
+              disabled={generating}
+              className="flex-1 px-4 py-3 rounded-xl border-2 border-slate-200 bg-slate-50 text-sm outline-none focus:border-indigo-400 disabled:opacity-50"
+            />
+            <button
+              onClick={() => generar()}
+              disabled={generating || !peticion.trim()}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-600 text-white text-sm font-bold cursor-pointer hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {generating ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Sparkles size={16} />
+              )}
+              Generar
+            </button>
+          </div>
 
-      {/* Vista previa de los datos */}
-      {hasData && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          {tipo === 'red' && networkData && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Stat label="Usuarios" value={networkData.usuarios.total} />
-              <Stat label="Elecciones" value={networkData.elecciones.total} />
-              <Stat label="Canales" value={networkData.canales.length} />
-              <Stat label="Nodos" value={networkData.nodos.length} />
-              <Stat
-                label="Votos confirmados"
-                value={networkData.votos.confirmados}
-              />
-            </div>
-          )}
-          {tipo === 'eleccion' && electionData && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Stat label="Padrón" value={electionData.padron.total} />
-              <Stat label="Votaron" value={electionData.padron.votaron} />
-              <Stat label="No votaron" value={electionData.padron.noVotaron} />
-              <Stat
-                label="Participación"
-                value={`${electionData.participacionPct}%`}
-              />
+          <div className="flex flex-wrap gap-2 mt-3">
+            {sugerencias.map((s) => (
+              <button
+                key={s}
+                onClick={() => {
+                  setPeticion(s);
+                  void generar(s);
+                }}
+                disabled={generating}
+                className="text-xs px-3 py-1.5 rounded-lg cursor-pointer bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+
+          {error && (
+            <div className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              {error}
             </div>
           )}
         </div>
       )}
 
-      {/* Chat con IA */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <Bot size={18} className="text-indigo-600" />
-            <h3 className="text-sm font-black text-slate-800">
-              Asistente de análisis
-            </h3>
-          </div>
-          {aiEnabled && chat.some((t) => t.role === 'assistant') && (
-            <button
-              onClick={speakLast}
-              disabled={speaking}
-              title="Escuchar la última respuesta"
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50"
-            >
-              {speaking ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Volume2 size={13} />
-              )}
-              Escuchar
-            </button>
-          )}
+      {generating && (
+        <div className="flex flex-col items-center justify-center py-16 gap-3 text-indigo-600">
+          <Loader2 size={40} className="animate-spin opacity-40" />
+          <p className="text-sm text-slate-400">Generando el reporte...</p>
         </div>
+      )}
 
-        {!aiEnabled ? (
-          <div className="p-8 text-center text-sm text-slate-400">
-            El asistente con IA no está configurado. Define{' '}
-            <code className="text-slate-600">OPENAI_API_KEY</code> en el backend
-            para activarlo. Los reportes descargables funcionan sin esto.
+      {spec && !generating && (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="flex items-start justify-between gap-4 p-6 border-b border-slate-100">
+            <div>
+              <h3 className="text-lg font-black text-slate-800">
+                {spec.titulo}
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">{spec.insight}</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={exportarPdf}
+                title="Exportar a PDF"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:opacity-90 cursor-pointer"
+              >
+                <FileText size={14} />
+                PDF
+              </button>
+              <button
+                onClick={exportarExcel}
+                title="Exportar a Excel"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:opacity-90 cursor-pointer"
+              >
+                <FileSpreadsheet size={14} />
+                Excel
+              </button>
+            </div>
           </div>
-        ) : (
-          <>
-            <div className="p-5 max-h-96 overflow-y-auto flex flex-col gap-3">
-              {chat.length === 0 && (
-                <p className="text-sm text-slate-400 text-center py-6">
-                  Pregúntale al asistente sobre{' '}
-                  {isAdmin ? 'el estado de la red' : 'esta elección'}. Por
-                  ejemplo: «¿Cuál es la participación?» o «Resume los datos
-                  principales».
-                </p>
-              )}
-              {chat.map((turn, i) => (
-                <div
-                  key={i}
-                  className={`flex ${
-                    turn.role === 'user' ? 'justify-end' : 'justify-start'
-                  }`}
-                >
-                  <div
-                    className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap ${
-                      turn.role === 'user'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-100 text-slate-800'
-                    }`}
+
+          <div ref={visualRef} className="p-6 bg-white">
+            {spec.tipoVisual === 'bar' && (
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
+                    {chartData.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+
+            {spec.tipoVisual === 'pie' && (
+              <ResponsiveContainer width="100%" height={340}>
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    dataKey="valor"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={120}
+                    label={(e: { name?: string; valor?: number }) =>
+                      `${e.name}: ${e.valor}`
+                    }
                   >
-                    {turn.content}
-                  </div>
-                </div>
-              ))}
-              {asking && (
-                <div className="flex justify-start">
-                  <div className="bg-slate-100 text-slate-500 px-4 py-2.5 rounded-2xl text-sm flex items-center gap-2">
-                    <Loader2 size={14} className="animate-spin" />
-                    Analizando…
-                  </div>
-                </div>
-              )}
-              <div ref={chatEndRef} />
-            </div>
+                    {chartData.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
 
-            <div className="p-4 border-t border-slate-100 flex gap-2">
-              <button
-                onClick={toggleRecording}
-                disabled={transcribing || !hasData}
-                title={
-                  recording ? 'Detener grabación' : 'Dictar pregunta por voz'
-                }
-                className={`px-3 py-2.5 rounded-xl cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
-                  recording
-                    ? 'bg-red-600 text-white animate-pulse'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {transcribing ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : recording ? (
-                  <Square size={16} />
-                ) : (
-                  <Mic size={16} />
-                )}
-              </button>
-              <input
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && ask()}
-                placeholder={
-                  recording
-                    ? 'Grabando… habla ahora'
-                    : 'Escribe o dicta tu pregunta…'
-                }
-                disabled={asking || !hasData}
-                className="flex-1 px-4 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50 text-sm outline-none focus:border-indigo-400 disabled:opacity-50"
-              />
-              <button
-                onClick={ask}
-                disabled={asking || !question.trim() || !hasData}
-                className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white cursor-pointer hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Send size={16} />
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+            {spec.tipoVisual === 'line' && (
+              <ResponsiveContainer width="100%" height={340}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="valor"
+                    stroke="#6366f1"
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
 
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="bg-slate-50 rounded-xl p-4 text-center">
-      <div className="text-2xl font-black text-slate-800">{value}</div>
-      <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">
-        {label}
-      </div>
+            {spec.tipoVisual === 'table' && spec.tabla && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      {spec.tabla.columnas.map((c) => (
+                        <th
+                          key={c}
+                          className="text-left px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-200"
+                        >
+                          {c}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {spec.tabla.filas.map((fila, i) => (
+                      <tr
+                        key={i}
+                        className="border-b border-slate-50 last:border-b-0"
+                      >
+                        {fila.map((celda, j) => (
+                          <td key={j} className="px-4 py-2.5 text-slate-700">
+                            {celda}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

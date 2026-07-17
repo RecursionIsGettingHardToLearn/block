@@ -6,10 +6,16 @@ import {
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 
-/** Un turno del chat: quién habló y qué dijo. */
-export interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
+/**
+ * Especificación de un reporte visual que produce la IA. El frontend la
+ * renderiza como gráfico (bar/pie/line) o tabla, según `tipoVisual`.
+ */
+export interface ReportSpec {
+  titulo: string;
+  tipoVisual: 'bar' | 'pie' | 'line' | 'table';
+  insight: string;
+  datos?: { etiqueta: string; valor: number }[];
+  tabla?: { columnas: string[]; filas: string[][] };
 }
 
 /**
@@ -92,32 +98,45 @@ export class ReportsAiService {
   }
 
   /**
-   * Responde una pregunta del usuario usando los datos del reporte como
-   * contexto. El modelo se instruye para responder solo con esos datos y en
-   * español, como analista electoral.
+   * Genera una ESPECIFICACIÓN DE REPORTE a partir de una petición en lenguaje
+   * natural y los datos disponibles. En vez de texto libre, el modelo devuelve
+   * JSON estructurado que el frontend renderiza como tabla o gráfico. Así el
+   * reporte es visual (y exportable), no un chat.
    */
-  async chat(
+  async generarReporte(
     contexto: unknown,
     tipo: 'red' | 'eleccion',
-    historial: ChatMessage[],
-    pregunta: string,
-  ): Promise<string> {
+    peticion: string,
+  ): Promise<ReportSpec> {
     const client = this.getClient();
     const model = this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4o-mini';
 
-    const rol =
+    const ambito =
       tipo === 'red'
-        ? 'el estado general de la red de votación (usuarios, elecciones, canales, nodos y votos)'
-        : 'una elección concreta (participación y, si ya cerró, resultados)';
+        ? 'el estado general de la red de votación (usuarios por rol, elecciones por estado, canales, nodos y votos)'
+        : 'una elección concreta (padrón, participación y, si ya cerró, resultados por candidato)';
 
-    const system = `Eres un analista de un sistema de votación electrónica sobre blockchain (Hyperledger Fabric). Respondes preguntas sobre ${rol}. Reglas:
-- Usa ÚNICAMENTE los datos del reporte que se te entregan en JSON. No inventes cifras.
-- Si te preguntan algo que los datos no permiten responder, dilo con claridad.
-- Si los resultados por candidato están marcados como no disponibles (elección aún no cerrada), NO especules sobre quién va ganando: explica que se revelan al cierre.
-- Responde en español, de forma concisa y profesional, apto para un reporte.
-- Cuando sea útil, resume en cifras y porcentajes.
+    const system = `Eres un generador de reportes para un sistema de votación electrónica sobre blockchain. A partir de una petición del usuario y de los DATOS en JSON, produces la especificación de UNA visualización.
 
-Datos del reporte (JSON):
+Ámbito de los datos: ${ambito}.
+
+Debes responder ÚNICAMENTE con un objeto JSON válido (sin markdown, sin texto fuera del JSON) con esta forma exacta:
+{
+  "titulo": "string, título del reporte",
+  "tipoVisual": "bar" | "pie" | "line" | "table",
+  "insight": "string, 1-2 frases interpretando los datos",
+  "datos": [ { "etiqueta": "string", "valor": number }, ... ],   // para bar/pie/line
+  "tabla": { "columnas": ["c1","c2",...], "filas": [["v1","v2",...], ...] }  // solo para table
+}
+
+Reglas:
+- Elige el tipoVisual MÁS ADECUADO para lo que se pide: comparaciones de categorías → "bar"; proporciones de un total → "pie"; evolución/secuencia → "line"; listados con varias columnas o detalle → "table".
+- Usa SOLO los datos del JSON. No inventes cifras. Si la petición no se puede responder con los datos, devuelve un tipoVisual "table" con una sola fila explicando el motivo en la primera celda.
+- Para bar/pie/line incluye "datos" (no "tabla"). Para table incluye "tabla" (no "datos").
+- Si los resultados por candidato están marcados como no disponibles (elección no cerrada), NO los inventes: dilo en el insight y muestra lo que sí hay (participación).
+- Todo el texto en español.
+
+DATOS (JSON):
 ${JSON.stringify(contexto)}`;
 
     try {
@@ -125,21 +144,44 @@ ${JSON.stringify(contexto)}`;
         model,
         messages: [
           { role: 'system', content: system },
-          ...historial.map((m) => ({ role: m.role, content: m.content })),
-          { role: 'user', content: pregunta },
+          { role: 'user', content: peticion },
         ],
-        temperature: 0.2,
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
       });
-      return (
-        completion.choices[0]?.message?.content ??
-        'No se obtuvo respuesta del modelo.'
-      );
+      const raw = completion.choices[0]?.message?.content ?? '{}';
+      const spec = JSON.parse(raw) as ReportSpec;
+      return spec;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'error desconocido';
-      this.logger.error(`Fallo la llamada a OpenAI: ${msg}`);
+      const detalle = this.describeOpenAiError(err);
+      this.logger.error(`Fallo la generación del reporte: ${detalle}`);
       throw new ServiceUnavailableException(
-        'No se pudo consultar el servicio de IA. Revisa la clave o inténtalo más tarde.',
+        `No se pudo generar el reporte: ${detalle}`,
       );
     }
+  }
+
+  /**
+   * Extrae un mensaje útil de un error de OpenAI. El SDK expone status y un
+   * cuerpo con el motivo (clave inválida, cuota agotada, modelo inexistente…);
+   * se arma un texto legible en vez del genérico «error desconocido».
+   */
+  private describeOpenAiError(err: unknown): string {
+    if (err && typeof err === 'object') {
+      const e = err as {
+        status?: number;
+        code?: string;
+        message?: string;
+        error?: { message?: string; code?: string };
+      };
+      const partes: string[] = [];
+      if (e.status) partes.push(`HTTP ${e.status}`);
+      const motivo = e.error?.message ?? e.message;
+      if (motivo) partes.push(motivo);
+      const code = e.error?.code ?? e.code;
+      if (code) partes.push(`(${code})`);
+      if (partes.length) return partes.join(' ');
+    }
+    return err instanceof Error ? err.message : 'error desconocido';
   }
 }
