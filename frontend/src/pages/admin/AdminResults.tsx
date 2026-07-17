@@ -14,40 +14,54 @@ export default function AdminResults() {
   } = useElections();
   const [tallies, setTallies] = useState<Record<string, Tally>>({});
   const [loadingTallies, setLoadingTallies] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const fetchAllTallies = useCallback(async () => {
-    if (elections.length === 0) return;
+  // Solo se consulta el conteo de la elección elegida: antes se disparaba
+  // una petición por CADA elección aunque se mirara una sola.
+  const fetchTally = useCallback(async (electionId: string) => {
     setLoadingTallies(true);
-    const newTallies: Record<string, Tally> = {};
     try {
-      await Promise.all(
-        elections.map(async (e) => {
-          if (e.status !== 'BORRADOR') {
-            const { data } = await api.get<{ results?: Tally }>(
-              `/fabric/results/${e.id}`,
-            );
-            newTallies[e.id] = data.results ?? {};
-          }
-        }),
+      const { data } = await api.get<{ results?: Tally }>(
+        `/fabric/results/${electionId}`,
       );
-      setTallies(newTallies);
+      setTallies((prev) => ({ ...prev, [electionId]: data.results ?? {} }));
     } catch (err) {
       console.error('Error al cargar resultados:', err);
     } finally {
       setLoadingTallies(false);
     }
-  }, [elections]);
+  }, []);
+
+  // Selección por defecto: la elección más relevante (ACTIVA primero, luego
+  // la más reciente). Si la seleccionada desaparece, se reelige.
+  useEffect(() => {
+    const candidatas = elections.filter((e) => e.status !== 'BORRADOR');
+    if (candidatas.length === 0) return;
+    if (selectedId && candidatas.some((e) => e.id === selectedId)) return;
+    const orden: Record<string, number> = {
+      ACTIVA: 0,
+      PROGRAMADA: 1,
+      CERRADA: 2,
+      ESCRUTADA: 3,
+    };
+    const primera = [...candidatas].sort((a, b) => {
+      const d = (orden[a.status] ?? 9) - (orden[b.status] ?? 9);
+      if (d !== 0) return d;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })[0];
+    setSelectedId(primera.id);
+  }, [elections, selectedId]);
 
   useEffect(() => {
-    void fetchAllTallies();
-  }, [fetchAllTallies]);
+    if (selectedId) void fetchTally(selectedId);
+  }, [selectedId, fetchTally]);
 
   const refresh = () => {
     refreshElections();
-    fetchAllTallies();
+    if (selectedId) void fetchTally(selectedId);
   };
 
-  if (loadingElections || loadingTallies)
+  if (loadingElections)
     return (
       <div className="flex items-center justify-center h-96 text-indigo-600">
         <RefreshCw size={48} className="animate-spin opacity-20" />
@@ -68,6 +82,11 @@ export default function AdminResults() {
       if (statusDiff !== 0) return statusDiff;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
+
+  const selected =
+    displayElections.find((e) => e.id === selectedId) ??
+    displayElections[0] ??
+    null;
 
   return (
     <div className="flex flex-col gap-8 animate-fade-in max-w-7xl mx-auto pb-32">
@@ -98,7 +117,7 @@ export default function AdminResults() {
         </button>
       </div>
 
-      {displayElections.length === 0 ? (
+      {!selected ? (
         <div className="text-center py-32 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200 opacity-40 flex flex-col items-center gap-4">
           <Landmark size={64} />
           <p className="font-black uppercase tracking-[0.3em] text-xs">
@@ -106,222 +125,259 @@ export default function AdminResults() {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-12">
-          {displayElections.map((election) => {
-            const currentTally = tallies[election.id] || {};
-            const totalVotos = Object.values(currentTally).reduce(
-              (a, b) => a + b,
-              0,
-            );
-            const isFinal =
-              election.status === 'CERRADA' || election.status === 'ESCRUTADA';
+        <>
+          {/* Selector de elección */}
+          <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400 shrink-0">
+              Ver resultados de
+            </label>
+            <select
+              value={selected.id}
+              onChange={(e) => setSelectedId(e.target.value)}
+              className="flex-1 px-4 py-3 rounded-2xl border-2 border-slate-200 bg-slate-50 text-sm font-bold text-slate-800 outline-none focus:border-indigo-400 cursor-pointer"
+            >
+              {displayElections.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.status === 'ACTIVA'
+                    ? '🟢 EN CURSO — '
+                    : e.status === 'PROGRAMADA'
+                      ? '🕐 PROGRAMADA — '
+                      : e.status === 'ESCRUTADA'
+                        ? '🏁 ESCRUTADA — '
+                        : '🔒 CERRADA — '}
+                  {e.title}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            // Crear lista completa incluyendo blancos y nulos
-            const allResults = [
-              ...election.candidates.map((c) => ({
-                id: c.id,
-                name: c.candidateName,
-                frontName: c.frontName,
-                logoFrente: c.logoFrente,
-                photoUrl: c.photoUrl,
-                votos: currentTally[c.id] || 0,
-                isSpecial: false,
-              })),
-              {
-                id: 'votos_blancos',
-                name: 'Votos Blancos',
-                frontName: 'Voto válido sin candidato',
-                logoFrente: null,
-                photoUrl: null,
-                votos: currentTally['votos_blancos'] || 0,
-                isSpecial: true,
-                icon: 'blank',
-              },
-              {
-                id: 'votos_nulos',
-                name: 'Votos Nulos',
-                frontName: 'Voto inválido',
-                logoFrente: null,
-                photoUrl: null,
-                votos: currentTally['votos_nulos'] || 0,
-                isSpecial: true,
-                icon: 'null',
-              },
-            ];
+          {tallies[selected.id] === undefined && loadingTallies ? (
+            <div className="flex items-center justify-center py-24 text-indigo-600">
+              <RefreshCw size={32} className="animate-spin opacity-30" />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-12">
+              {[selected].map((election) => {
+                const currentTally = tallies[election.id] || {};
+                const totalVotos = Object.values(currentTally).reduce(
+                  (a, b) => a + b,
+                  0,
+                );
+                const isFinal =
+                  election.status === 'CERRADA' ||
+                  election.status === 'ESCRUTADA';
 
-            // Ordenar por votos (descendente)
-            const sortedResults = [...allResults].sort(
-              (a, b) => b.votos - a.votos,
-            );
-            const maxVotos =
-              sortedResults.length > 0 ? sortedResults[0].votos : 0;
+                // Crear lista completa incluyendo blancos y nulos
+                const allResults = [
+                  ...election.candidates.map((c) => ({
+                    id: c.id,
+                    name: c.candidateName,
+                    frontName: c.frontName,
+                    logoFrente: c.logoFrente,
+                    photoUrl: c.photoUrl,
+                    votos: currentTally[c.id] || 0,
+                    isSpecial: false,
+                  })),
+                  {
+                    id: 'votos_blancos',
+                    name: 'Votos Blancos',
+                    frontName: 'Voto válido sin candidato',
+                    logoFrente: null,
+                    photoUrl: null,
+                    votos: currentTally['votos_blancos'] || 0,
+                    isSpecial: true,
+                    icon: 'blank',
+                  },
+                  {
+                    id: 'votos_nulos',
+                    name: 'Votos Nulos',
+                    frontName: 'Voto inválido',
+                    logoFrente: null,
+                    photoUrl: null,
+                    votos: currentTally['votos_nulos'] || 0,
+                    isSpecial: true,
+                    icon: 'null',
+                  },
+                ];
 
-            return (
-              <div key={election.id} className="flex flex-col gap-6">
-                {/* Election Header Card */}
-                <div
-                  className={`text-white p-8 rounded-[2.5rem] shadow-xl overflow-hidden ${
-                    election.status === 'ACTIVA'
-                      ? 'bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-800'
-                      : isFinal
-                        ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-800'
-                        : 'bg-gradient-to-br from-slate-900 to-slate-800'
-                  }`}
-                >
-                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                    <div className="relative z-10">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div
-                          className={`w-3 h-3 rounded-full ${
-                            election.status === 'ACTIVA'
-                              ? 'bg-emerald-500 animate-pulse'
-                              : election.status === 'CERRADA'
-                                ? 'bg-amber-500'
-                                : 'bg-slate-500'
-                          }`}
-                        />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-indigo-300">
-                          {isFinal
-                            ? 'RESULTADO FINAL'
-                            : election.status.replace('_', ' ')}
-                        </span>
-                      </div>
-                      <h3 className="text-2xl md:text-3xl font-black tracking-tighter uppercase italic leading-none">
-                        {election.title}
-                      </h3>
-                      {election.description && (
-                        <p className="text-sm text-slate-400 mt-2 max-w-2xl">
-                          {election.description}
-                        </p>
-                      )}
-                      {isFinal && (
-                        <p className="text-[10px] text-emerald-300 mt-3 font-black uppercase tracking-[0.25em]">
-                          Escrutinio consolidado con {totalVotos} voto
-                          {totalVotos !== 1 ? 's' : ''}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                // Ordenar por votos (descendente)
+                const sortedResults = [...allResults].sort(
+                  (a, b) => b.votos - a.votos,
+                );
+                const maxVotos =
+                  sortedResults.length > 0 ? sortedResults[0].votos : 0;
 
-                  {/* Stats Bar */}
-                  <div className="grid grid-cols-3 bg-indigo-600/90 text-white py-5 mt-6 rounded-2xl">
-                    <div className="flex flex-col items-center border-r border-white/20">
-                      <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
-                        Total Votos
-                      </span>
-                      <span className="text-3xl font-black italic">
-                        {totalVotos}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-center border-r border-white/20">
-                      <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
-                        Candidatos
-                      </span>
-                      <span className="text-3xl font-black italic">
-                        {election.candidates.length}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
-                        Cargo
-                      </span>
-                      <span className="text-lg font-black italic text-center px-4 line-clamp-2">
-                        {election.candidates.length > 0
-                          ? election.candidates[0].position || 'N/A'
-                          : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Results Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                  {sortedResults.map((result) => {
-                    const v = result.votos;
-                    const pct =
-                      totalVotos > 0
-                        ? ((v / totalVotos) * 100).toFixed(1)
-                        : '0';
-                    const leading = v === maxVotos && v > 0;
-
-                    return (
-                      <div
-                        key={result.id}
-                        className={`bg-white rounded-[2rem] border-2 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col relative ${
-                          leading
-                            ? 'border-amber-400 ring-2 ring-amber-400/30'
-                            : 'border-slate-100'
-                        }`}
-                      >
-                        {/* Logo del Frente (solo si es candidato y tiene logo) */}
-                        {!result.isSpecial && result.logoFrente ? (
-                          <div className="h-16 bg-slate-50 border-b border-slate-100 flex items-center justify-center p-3">
-                            {result.logoFrente.startsWith('data:') ? (
-                              <img
-                                src={result.logoFrente}
-                                alt={result.frontName}
-                                className="h-12 w-auto object-contain"
-                              />
-                            ) : (
-                              <img
-                                src={result.logoFrente}
-                                alt={result.frontName}
-                                className="h-12 w-auto object-contain"
-                              />
-                            )}
+                return (
+                  <div key={election.id} className="flex flex-col gap-6">
+                    {/* Election Header Card */}
+                    <div
+                      className={`text-white p-8 rounded-[2.5rem] shadow-xl overflow-hidden ${
+                        election.status === 'ACTIVA'
+                          ? 'bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-800'
+                          : isFinal
+                            ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-800'
+                            : 'bg-gradient-to-br from-slate-900 to-slate-800'
+                      }`}
+                    >
+                      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                        <div className="relative z-10">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div
+                              className={`w-3 h-3 rounded-full ${
+                                election.status === 'ACTIVA'
+                                  ? 'bg-emerald-500 animate-pulse'
+                                  : election.status === 'CERRADA'
+                                    ? 'bg-amber-500'
+                                    : 'bg-slate-500'
+                              }`}
+                            />
+                            <span className="text-[9px] font-black uppercase tracking-widest text-indigo-300">
+                              {isFinal
+                                ? 'RESULTADO FINAL'
+                                : election.status.replace('_', ' ')}
+                            </span>
                           </div>
-                        ) : !result.isSpecial ? (
-                          <div className="h-16 bg-slate-50 border-b border-slate-100 flex items-center justify-center p-3">
-                            <Landmark size={28} className="text-slate-300" />
-                          </div>
-                        ) : null}
-
-                        {/* Leading Badge */}
-                        {leading && !result.isSpecial && (
-                          <div className="absolute right-3 mt-3 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 px-2 py-1 rounded-full text-[6px] font-black uppercase tracking-widest flex items-center gap-1 shadow-lg">
-                            <Users size={8} strokeWidth={3} />
-                            Líder
-                          </div>
-                        )}
-
-                        <div className="p-6 flex flex-col items-center text-center flex-1">
-                          <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1">
-                            {result.isSpecial
-                              ? result.frontName
-                              : result.frontName}
-                          </span>
-                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight mb-4">
-                            {result.name}
-                          </h4>
-
-                          <div className="w-full bg-slate-900 text-white rounded-[1.25rem] p-4 shadow-lg mt-auto">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-[8px] font-black opacity-40 uppercase">
-                                Escrutinio
-                              </span>
-                              <span className="text-indigo-400 font-black italic text-base">
-                                {pct}%
-                              </span>
-                            </div>
-                            <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
-                              <div
-                                className={`h-full transition-all duration-1000 ${leading ? 'bg-gradient-to-r from-amber-400 to-amber-500' : 'bg-indigo-500'}`}
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                            <div className="text-[10px] font-black uppercase tracking-widest">
-                              {v} {v === 1 ? 'Voto' : 'Votos'}
-                            </div>
-                          </div>
+                          <h3 className="text-2xl md:text-3xl font-black tracking-tighter uppercase italic leading-none">
+                            {election.title}
+                          </h3>
+                          {election.description && (
+                            <p className="text-sm text-slate-400 mt-2 max-w-2xl">
+                              {election.description}
+                            </p>
+                          )}
+                          {isFinal && (
+                            <p className="text-[10px] text-emerald-300 mt-3 font-black uppercase tracking-[0.25em]">
+                              Escrutinio consolidado con {totalVotos} voto
+                              {totalVotos !== 1 ? 's' : ''}
+                            </p>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+
+                      {/* Stats Bar */}
+                      <div className="grid grid-cols-3 bg-indigo-600/90 text-white py-5 mt-6 rounded-2xl">
+                        <div className="flex flex-col items-center border-r border-white/20">
+                          <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
+                            Total Votos
+                          </span>
+                          <span className="text-3xl font-black italic">
+                            {totalVotos}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-center border-r border-white/20">
+                          <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
+                            Candidatos
+                          </span>
+                          <span className="text-3xl font-black italic">
+                            {election.candidates.length}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
+                            Cargo
+                          </span>
+                          <span className="text-lg font-black italic text-center px-4 line-clamp-2">
+                            {election.candidates.length > 0
+                              ? election.candidates[0].position || 'N/A'
+                              : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Results Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                      {sortedResults.map((result) => {
+                        const v = result.votos;
+                        const pct =
+                          totalVotos > 0
+                            ? ((v / totalVotos) * 100).toFixed(1)
+                            : '0';
+                        const leading = v === maxVotos && v > 0;
+
+                        return (
+                          <div
+                            key={result.id}
+                            className={`bg-white rounded-[2rem] border-2 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col relative ${
+                              leading
+                                ? 'border-amber-400 ring-2 ring-amber-400/30'
+                                : 'border-slate-100'
+                            }`}
+                          >
+                            {/* Logo del Frente (solo si es candidato y tiene logo) */}
+                            {!result.isSpecial && result.logoFrente ? (
+                              <div className="h-16 bg-slate-50 border-b border-slate-100 flex items-center justify-center p-3">
+                                {result.logoFrente.startsWith('data:') ? (
+                                  <img
+                                    src={result.logoFrente}
+                                    alt={result.frontName}
+                                    className="h-12 w-auto object-contain"
+                                  />
+                                ) : (
+                                  <img
+                                    src={result.logoFrente}
+                                    alt={result.frontName}
+                                    className="h-12 w-auto object-contain"
+                                  />
+                                )}
+                              </div>
+                            ) : !result.isSpecial ? (
+                              <div className="h-16 bg-slate-50 border-b border-slate-100 flex items-center justify-center p-3">
+                                <Landmark
+                                  size={28}
+                                  className="text-slate-300"
+                                />
+                              </div>
+                            ) : null}
+
+                            {/* Leading Badge */}
+                            {leading && !result.isSpecial && (
+                              <div className="absolute right-3 mt-3 bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 px-2 py-1 rounded-full text-[6px] font-black uppercase tracking-widest flex items-center gap-1 shadow-lg">
+                                <Users size={8} strokeWidth={3} />
+                                Líder
+                              </div>
+                            )}
+
+                            <div className="p-6 flex flex-col items-center text-center flex-1">
+                              <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1">
+                                {result.isSpecial
+                                  ? result.frontName
+                                  : result.frontName}
+                              </span>
+                              <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight mb-4">
+                                {result.name}
+                              </h4>
+
+                              <div className="w-full bg-slate-900 text-white rounded-[1.25rem] p-4 shadow-lg mt-auto">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-[8px] font-black opacity-40 uppercase">
+                                    Escrutinio
+                                  </span>
+                                  <span className="text-indigo-400 font-black italic text-base">
+                                    {pct}%
+                                  </span>
+                                </div>
+                                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
+                                  <div
+                                    className={`h-full transition-all duration-1000 ${leading ? 'bg-gradient-to-r from-amber-400 to-amber-500' : 'bg-indigo-500'}`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                                <div className="text-[10px] font-black uppercase tracking-widest">
+                                  {v} {v === 1 ? 'Voto' : 'Votos'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
