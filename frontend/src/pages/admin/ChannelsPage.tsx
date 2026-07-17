@@ -20,6 +20,8 @@ interface FabricChannel {
   descripcion: string | null;
   activo: boolean;
   creadoEn: string;
+  /** Peers unidos al canal según Fabric (lo reporta el backend). */
+  peers?: { id: string; nombre: string }[];
 }
 
 interface FabricNode {
@@ -453,6 +455,14 @@ export default function ChannelsPage() {
                         {ch.nombre}
                       </code>
                     </div>
+                    <div
+                      className="mt-1 text-[11px]"
+                      style={{ color: 'var(--text-3)' }}
+                    >
+                      {ch.peers && ch.peers.length > 0
+                        ? `Nodos unidos: ${ch.peers.map((p) => p.nombre).join(', ')}`
+                        : 'Ningún peer activo unido'}
+                    </div>
                   </td>
                   <td
                     className="px-4 py-3 text-xs"
@@ -486,18 +496,31 @@ export default function ChannelsPage() {
                             color: 'var(--text-1)',
                           }}
                         >
-                          <option value="">Peer activo…</option>
-                          {activeNodes.map((node) => (
-                            <option key={node.id} value={node.id}>
-                              {node.nombre} ({node.endpoint})
-                            </option>
-                          ))}
+                          <option value="">
+                            {activeNodes.some(
+                              (n) => !ch.peers?.some((p) => p.id === n.id),
+                            )
+                              ? 'Peer activo…'
+                              : 'Todos ya están unidos'}
+                          </option>
+                          {activeNodes
+                            .filter(
+                              (node) =>
+                                !ch.peers?.some((p) => p.id === node.id),
+                            )
+                            .map((node) => (
+                              <option key={node.id} value={node.id}>
+                                {node.nombre} ({node.endpoint})
+                              </option>
+                            ))}
                         </select>
                         <button
                           onClick={() => handleJoinPeer(ch.nombre)}
                           disabled={
                             busyAction === `join:${ch.nombre}` ||
-                            activeNodes.length === 0
+                            !activeNodes.some(
+                              (n) => !ch.peers?.some((p) => p.id === n.id),
+                            )
                           }
                           className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold border-0 cursor-pointer disabled:opacity-50"
                           style={{

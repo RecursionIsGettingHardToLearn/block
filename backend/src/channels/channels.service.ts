@@ -2,13 +2,14 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { exec } from 'child_process';
 import { promises as fsp } from 'node:fs';
 import * as path from 'path';
 import { promisify } from 'util';
-import { getExecErrorDetail } from '../common/errors';
+import { getExecErrorDetail, getExecErrorSummary } from '../common/errors';
 import { DatabaseService } from '../database/database.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { CONFIGTX_PATH, CRYPTO_BASE } from '../common/fabric-paths';
@@ -29,6 +30,8 @@ export interface FabricChannel {
   descripcion: string | null;
   activo: boolean;
   creadoEn: Date;
+  /** Peers unidos al canal según el propio Fabric (solo los activos responden). */
+  peers?: { id: string; nombre: string }[];
 }
 
 interface FabricNodeRow {
@@ -50,6 +53,8 @@ interface FabricChannelRow {
 
 @Injectable()
 export class ChannelsService {
+  private readonly logger = new Logger(ChannelsService.name);
+
   constructor(private readonly db: DatabaseService) {}
 
   async findAll(): Promise<FabricChannel[]> {
@@ -58,7 +63,54 @@ export class ChannelsService {
        FROM canales_fabric
        ORDER BY creado_en ASC`,
     );
-    return rows.map((row) => this.map(row));
+    const channels = rows.map((row) => this.map(row));
+
+    // La membresía se le pregunta a Fabric, no a la base: cada peer activo
+    // reporta sus propios canales con `peer channel list`. Guardarlo en
+    // Postgres duplicaría la verdad y derivaría, como todo lo duplicado.
+    const { rows: nodes } = await this.db.query<FabricNodeRow>(
+      `SELECT * FROM nodos_fabric WHERE activo = true ORDER BY prioridad ASC`,
+    );
+    const porCanal = new Map<string, { id: string; nombre: string }[]>();
+    await Promise.all(
+      nodes.map(async (node) => {
+        try {
+          for (const canal of await this.listPeerChannels(node)) {
+            const lista = porCanal.get(canal) ?? [];
+            lista.push({ id: node.id, nombre: node.nombre });
+            porCanal.set(canal, lista);
+          }
+        } catch (err: unknown) {
+          // Un peer que no responde no debe tumbar el listado de canales.
+          this.logger.warn(
+            `No se pudo consultar los canales de ${node.nombre}: ${getExecErrorSummary(err)}`,
+          );
+        }
+      }),
+    );
+    return channels.map((ch) => ({
+      ...ch,
+      peers: (porCanal.get(ch.nombre) ?? []).sort((a, b) =>
+        a.nombre.localeCompare(b.nombre),
+      ),
+    }));
+  }
+
+  /** Canales a los que un peer ya está unido, según el propio peer. */
+  private async listPeerChannels(node: FabricNodeRow): Promise<string[]> {
+    const { stdout } = await execAsync(
+      `docker exec -e "CORE_PEER_ADDRESS=${this.peerAddress(node)}" -e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}" -e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}" cli peer channel list`,
+      { timeout: 15_000 },
+    );
+    return this.parseChannelList(stdout);
+  }
+
+  /** La salida de `peer channel list`: un encabezado y un canal por línea. */
+  private parseChannelList(salida: string): string[] {
+    return salida
+      .split('\n')
+      .map((linea) => linea.trim())
+      .filter((linea) => linea.length > 0 && !linea.includes('has joined'));
   }
 
   async createChannel(
@@ -254,7 +306,16 @@ export class ChannelsService {
   ): Promise<void> {
     const run = this.createRunner(log);
     await this.assertPeerCryptoReady(node);
-    await this.assertPeerReachable(node, log);
+    // La verificación de alcance ya pregunta `peer channel list`: se usa esa
+    // misma respuesta para no reintentar una unión que Fabric rechazaría con
+    // «ledger already exists».
+    const yaUnidos = await this.assertPeerReachable(node, log);
+    if (yaUnidos.includes(channelName)) {
+      log(
+        `[OK]   ${node.nombre} ya estaba unido al canal ${channelName}; nada que hacer`,
+      );
+      return;
+    }
     await run(
       `docker exec -e "CORE_PEER_ADDRESS=${this.peerAddress(node)}" -e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}" -e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}" cli peer channel join -b /channel-artifacts/${channelName}.block`,
       `Uniendo ${node.nombre} al canal ${channelName}`,
@@ -419,13 +480,14 @@ export class ChannelsService {
   private async assertPeerReachable(
     node: FabricNodeRow,
     log: (msg: string) => void,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const run = this.createRunner(log);
     try {
-      await run(
+      const salida = await run(
         `docker exec -e "CORE_PEER_ADDRESS=${this.peerAddress(node)}" -e "CORE_PEER_TLS_ROOTCERT_FILE=${this.peerTlsPath(node)}" -e "CORE_PEER_MSPCONFIGPATH=${ADMIN_MSP}" cli peer channel list`,
         `Verificando TLS/conexión de ${node.nombre}`,
       );
+      return this.parseChannelList(salida);
     } catch (err) {
       const msg = this.errorMessage(err);
       if (/unknown authority|certificate|tls/i.test(msg)) {
