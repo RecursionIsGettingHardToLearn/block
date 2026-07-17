@@ -1,15 +1,21 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { exec } from 'child_process';
+import { randomUUID } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import * as path from 'path';
 import { promisify } from 'util';
-import { getExecErrorDetail, getExecErrorSummary } from '../common/errors';
+import {
+  getErrorMessage,
+  getExecErrorDetail,
+  getExecErrorSummary,
+} from '../common/errors';
 import { DatabaseService } from '../database/database.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { CONFIGTX_PATH, CRYPTO_BASE } from '../common/fabric-paths';
@@ -51,11 +57,89 @@ interface FabricChannelRow {
   creado_en: Date;
 }
 
+/** Una creación de canal ejecutándose (o terminada) en segundo plano. */
+export interface ChannelJob {
+  id: string;
+  channelName: string;
+  estado: 'EN_PROGRESO' | 'COMPLETADO' | 'FALLIDO';
+  logs: string[];
+  error?: string;
+  iniciadoEn: Date;
+  finalizadoEn?: Date;
+}
+
 @Injectable()
 export class ChannelsService {
   private readonly logger = new Logger(ChannelsService.name);
 
+  /**
+   * Creaciones de canal en memoria, con el mismo patrón que los despliegues
+   * de peers: crear un canal tarda ~1 minuto (génesis, unir peers, desplegar
+   * chaincode) y atarlo a la petición HTTP obligaba a quedarse en la página.
+   * El POST responde al instante con el trabajo y la interfaz consulta el
+   * avance cuando quiere. Si el backend se reinicia a mitad, el historial se
+   * pierde con el proceso; el canal a medias se completa reintentando (crear
+   * es idempotente: el canal existente se detecta, unir y desplegar también).
+   */
+  private readonly channelJobs = new Map<string, ChannelJob>();
+
   constructor(private readonly db: DatabaseService) {}
+
+  /**
+   * Lanza la creación en segundo plano y devuelve el trabajo de inmediato.
+   * Una a la vez: dos creaciones simultáneas compartirían el contenedor cli
+   * y sus artefactos de canal.
+   */
+  startCreate(dto: CreateChannelDto): ChannelJob {
+    const enCurso = [...this.channelJobs.values()].find(
+      (j) => j.estado === 'EN_PROGRESO',
+    );
+    if (enCurso) {
+      throw new ConflictException(
+        `Ya hay una creación de canal en curso (${enCurso.channelName}). Espera a que termine.`,
+      );
+    }
+
+    const job: ChannelJob = {
+      id: randomUUID(),
+      channelName: dto.nombre,
+      estado: 'EN_PROGRESO',
+      logs: [],
+      iniciadoEn: new Date(),
+    };
+    this.channelJobs.set(job.id, job);
+    this.pruneJobs();
+
+    void this.createChannel(dto, (msg) => job.logs.push(msg))
+      .then(() => {
+        job.estado = 'COMPLETADO';
+        job.finalizadoEn = new Date();
+      })
+      .catch((err: unknown) => {
+        job.estado = 'FALLIDO';
+        job.error = getErrorMessage(err);
+        job.finalizadoEn = new Date();
+        job.logs.push(`[ERROR] ${job.error}`);
+      });
+
+    return job;
+  }
+
+  /** Trabajos recientes, el más nuevo primero. */
+  getCreations(): ChannelJob[] {
+    return [...this.channelJobs.values()].sort(
+      (a, b) => b.iniciadoEn.getTime() - a.iniciadoEn.getTime(),
+    );
+  }
+
+  private pruneJobs(): void {
+    const terminados = this.getCreations().filter(
+      (j) => j.estado !== 'EN_PROGRESO',
+    );
+    for (const viejo of terminados.slice(5)) {
+      this.channelJobs.delete(viejo.id);
+    }
+  }
 
   async findAll(): Promise<FabricChannel[]> {
     const { rows } = await this.db.query<FabricChannelRow>(
@@ -115,6 +199,7 @@ export class ChannelsService {
 
   async createChannel(
     dto: CreateChannelDto,
+    onLog?: (msg: string) => void,
   ): Promise<{ channel: FabricChannel; logs: string }> {
     const channelName = dto.nombre;
 
@@ -126,7 +211,10 @@ export class ChannelsService {
 
     const configtxSrc = CONFIGTX_PATH;
     const logs: string[] = [];
-    const log = (msg: string) => logs.push(msg);
+    const log = (msg: string) => {
+      logs.push(msg);
+      onLog?.(msg);
+    };
 
     const run = this.createRunner(log);
 

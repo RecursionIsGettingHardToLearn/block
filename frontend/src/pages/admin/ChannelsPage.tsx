@@ -42,6 +42,17 @@ export default function ChannelsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [creating, setCreating] = useState(false);
+
+  // Trabajo de creación en curso: vive en el servidor y se rehidrata al
+  // entrar, así que navegar a otra página no pierde el progreso.
+  interface ChannelJob {
+    id: string;
+    channelName: string;
+    estado: 'EN_PROGRESO' | 'COMPLETADO' | 'FALLIDO';
+    logs: string[];
+    error?: string;
+  }
+  const [createJob, setCreateJob] = useState<ChannelJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string | null>(null);
   const [logsTitle, setLogsTitle] = useState('Logs');
@@ -71,30 +82,53 @@ export default function ChannelsPage() {
     load();
   }, [load]);
 
+  // Retomar cualquier creación que siga viva al entrar a la página.
+  useEffect(() => {
+    api
+      .get<ChannelJob[]>('/channels/creations')
+      .then(({ data }) => {
+        const vivo =
+          data.find((j) => j.estado === 'EN_PROGRESO') ?? data[0] ?? null;
+        if (vivo) setCreateJob(vivo);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  // Mientras la creación esté en progreso, consultar su avance cada 2 s.
+  useEffect(() => {
+    if (createJob?.estado !== 'EN_PROGRESO') return;
+    const t = setInterval(() => {
+      api
+        .get<ChannelJob[]>('/channels/creations')
+        .then(({ data }) => {
+          const actualizado = data.find((j) => j.id === createJob.id);
+          if (!actualizado) return;
+          setCreateJob(actualizado);
+          if (actualizado.estado !== 'EN_PROGRESO') {
+            void load(); // terminó: refrescar la tabla de canales
+          }
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => clearInterval(t);
+  }, [createJob, load]);
+
   async function handleCreate() {
     if (!form.nombre) return;
     setCreating(true);
     setError(null);
-    setLogs(null);
     try {
-      const { data } = await api.post<{ channel: FabricChannel; logs: string }>(
-        '/channels',
-        {
-          nombre: form.nombre,
-          descripcion: form.descripcion || undefined,
-        },
-      );
-      setLogsTitle(`Creación: ${data.channel.nombre}`);
-      setLogs(data.logs);
-      setShowLogs(true);
+      // El backend responde al instante con el trabajo; la creación sigue en
+      // segundo plano y el polling la va actualizando.
+      const { data } = await api.post<ChannelJob>('/channels', {
+        nombre: form.nombre,
+        descripcion: form.descripcion || undefined,
+      });
+      setCreateJob(data);
       setForm(emptyForm);
       setShowForm(false);
-      await load();
     } catch (e: unknown) {
-      const msg = getApiErrorMessage(e, 'Error al crear canal');
-      setError(msg);
-      setLogs(msg);
-      setShowLogs(true);
+      setError(getApiErrorMessage(e, 'Error al iniciar la creación'));
     } finally {
       setCreating(false);
     }
@@ -365,6 +399,52 @@ export default function ChannelsPage() {
               {logs}
             </pre>
           )}
+        </div>
+      )}
+
+      {/* ── Progreso de la creación en segundo plano ── */}
+      {createJob && (
+        <div
+          className="mb-4 rounded-2xl p-4"
+          style={{
+            border: '1px solid var(--border)',
+            background: 'var(--surface-2)',
+          }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              {createJob.estado === 'EN_PROGRESO' && (
+                <Loader2
+                  size={16}
+                  className="animate-spin"
+                  style={{ color: 'var(--brand)' }}
+                />
+              )}
+              <span className="text-sm font-semibold">
+                {createJob.estado === 'EN_PROGRESO' &&
+                  `Creando el canal ${createJob.channelName}… (puedes navegar a otra página)`}
+                {createJob.estado === 'COMPLETADO' &&
+                  `✅ Canal ${createJob.channelName} creado correctamente`}
+                {createJob.estado === 'FALLIDO' &&
+                  `❌ Falló la creación del canal ${createJob.channelName}`}
+              </span>
+            </div>
+            {createJob.estado !== 'EN_PROGRESO' && (
+              <button
+                onClick={() => setCreateJob(null)}
+                className="text-xs cursor-pointer border-0 bg-transparent"
+                style={{ color: 'var(--text-3)' }}
+              >
+                Cerrar
+              </button>
+            )}
+          </div>
+          <pre
+            className="text-[11px] p-3 rounded-lg overflow-auto max-h-48 whitespace-pre-wrap"
+            style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}
+          >
+            {createJob.logs.length ? createJob.logs.join('\n') : 'Iniciando…'}
+          </pre>
         </div>
       )}
 

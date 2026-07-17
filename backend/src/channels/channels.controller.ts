@@ -26,11 +26,18 @@ export class ChannelsController {
   }
 
   @Post()
-  @HttpCode(HttpStatus.CREATED)
+  @HttpCode(HttpStatus.ACCEPTED)
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRADOR')
   create(@Body() dto: CreateChannelDto) {
-    return this.channelsService.createChannel(dto);
+    // Responde al instante con el trabajo; la creación corre en segundo
+    // plano y el progreso se consulta en GET /channels/creations.
+    return this.channelsService.startCreate(dto);
+  }
+
+  @Get('creations')
+  getCreations() {
+    return this.channelsService.getCreations();
   }
 
   @Post(':channelName/peers/:nodeId')
