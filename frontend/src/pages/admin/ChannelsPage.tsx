@@ -303,7 +303,13 @@ export default function ChannelsPage() {
                 setForm(emptyForm);
                 setError(null);
               }}
-              className="px-4 py-2 rounded-xl text-sm font-medium cursor-pointer border"
+              disabled={creating}
+              title={
+                creating
+                  ? 'La creación ya está en marcha en la red y no puede cancelarse: un canal creado en Fabric no se deshace'
+                  : undefined
+              }
+              className="px-4 py-2 rounded-xl text-sm font-medium cursor-pointer border disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 background: 'var(--surface-2)',
                 color: 'var(--text-2)',
