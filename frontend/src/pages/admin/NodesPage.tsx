@@ -190,27 +190,29 @@ export default function NodesPage() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => {
-              setShowDeploy((v) => !v);
-              setShowAdd(false);
-              setError(null);
-            }}
+            onClick={openAddForm}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border-0 cursor-pointer transition-opacity hover:opacity-90"
             style={{
               background: 'var(--status-sched-bg, #e0f2fe)',
               color: 'var(--status-sched, #0284c7)',
             }}
-          >
-            <Rocket size={15} />
-            Desplegar Peer
-          </button>
-          <button
-            onClick={openAddForm}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white border-0 cursor-pointer transition-opacity hover:opacity-90"
-            style={{ background: 'var(--brand)' }}
+            title="Solo registra la dirección de un peer que ya existe (p. ej., en otra máquina)"
           >
             <PlusCircle size={15} />
-            Agregar Nodo
+            Registrar Existente
+          </button>
+          <button
+            onClick={() => {
+              setShowDeploy((v) => !v);
+              setShowAdd(false);
+              setError(null);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white border-0 cursor-pointer transition-opacity hover:opacity-90"
+            style={{ background: 'var(--brand)' }}
+            title="Crea un peer completo: certificados, contenedores, canal y chaincode"
+          >
+            <Rocket size={15} />
+            Crear Peer
           </button>
         </div>
       </div>
@@ -257,8 +259,10 @@ export default function NodesPage() {
               )}
             </div>
             <p className="text-xs" style={{ color: 'var(--text-3)' }}>
-              Solo para peers que ya están corriendo en Docker. Si quieres crear
-              uno nuevo, usa <strong>Desplegar Peer</strong>.
+              Solo anota la dirección de un peer que <strong>ya existe</strong>{' '}
+              (por ejemplo, en otra máquina): no crea nada en Docker. Los peers
+              locales en ejecución se registran solos al refrescar la página;
+              para crear uno nuevo desde cero, usa <strong>Crear Peer</strong>.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -334,12 +338,13 @@ export default function NodesPage() {
               className="font-semibold text-sm"
               style={{ color: 'var(--text-1)' }}
             >
-              Desplegar nuevo peer
+              Crear nuevo peer
             </h3>
             <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
-              Genera certificados, inicia Docker, une al canal y{' '}
-              <strong>registra automáticamente</strong> el nodo. No uses
-              "Agregar Nodo" para el mismo peer.
+              Crea un peer completo desde cero: certificados con la CA,
+              contenedores (peer + CouchDB), unión al canal, chaincode y{' '}
+              <strong>registro automático</strong>. No hace falta registrarlo
+              después.
             </p>
           </div>
           <div className="flex flex-col gap-1 max-w-xs">
