@@ -16,3 +16,6 @@ supa.cre
 
 # Entorno local del frontend (usar .env.example como plantilla)
 frontend/.env
+
+# Documentación privada con datos de infraestructura y credenciales (no subir)
+local/
