@@ -25,6 +25,12 @@ DB_USER="${DB_USER:-postgres}"
 DB_NAME="${DB_NAME:-evoting}"
 DB_SSL="${DB_SSL:-false}"
 
+# Generador de reportes con IA (opcional). Si no se pasa OPENAI_API_KEY por
+# entorno, la aplicación funciona igual pero la pantalla de reportes muestra
+# "El generador con IA no está configurado".
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
+
 log() { echo -e "\n\033[0;32m==> $1\033[0m"; }
 
 # ─── 1. Paquetes base ───────────────────────────────────────────────────────
@@ -124,6 +130,16 @@ FABRIC_CHAINCODE=evoting-cc
 FABRIC_CA_URL=https://localhost:7054
 FABRIC_NETWORK_PATH=${APP_DIR}/fabric/network
 EOF
+
+if [ -n "$OPENAI_API_KEY" ]; then
+  cat >> backend/.env <<EOF
+
+OPENAI_API_KEY=${OPENAI_API_KEY}
+OPENAI_MODEL=${OPENAI_MODEL}
+EOF
+else
+  echo "    AVISO: sin OPENAI_API_KEY, los reportes con IA quedarán desactivados."
+fi
 chmod 600 backend/.env
 
 # ─── 7. Base de datos ───────────────────────────────────────────────────────
