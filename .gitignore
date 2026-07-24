@@ -19,3 +19,6 @@ frontend/.env
 
 # Documentación privada con datos de infraestructura y credenciales (no subir)
 local/
+
+
+comand.md
