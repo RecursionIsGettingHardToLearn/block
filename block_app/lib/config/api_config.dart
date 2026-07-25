@@ -10,6 +10,11 @@
 ///
 /// Ajusta [baseUrl] a tu caso antes de compilar.
 class ApiConfig {
-  // Por defecto, el emulador de Android apuntando al backend local en :3000.
-  static const String baseUrl = 'http://10.0.2.2:3000';
+  // Producción (Azure): Caddy sirve la API bajo /api/* y quita ese prefijo
+  // antes de reenviar al backend NestJS (:3000). Por eso el sufijo /api aquí.
+  static const String baseUrl =
+      'https://block-evoting-22439.northcentralus.cloudapp.azure.com/api';
+
+  // Para desarrollo local con el emulador de Android, usar en su lugar:
+  //   static const String baseUrl = 'http://10.0.2.2:3000';
 }

@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Requerido para que el APK de release pueda hacer peticiones HTTP al
+         backend. Sin esto, Android bloquea toda la red y el login falla con
+         "No se pudo conectar con el servidor" (el permiso solo se inyecta
+         automaticamente en los builds de debug/profile, no en release). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="E-Voting"
         android:name="${applicationName}"
