@@ -10,6 +10,7 @@ import {
   Printer,
 } from 'lucide-react';
 import { useElections } from '../../hooks/useElections';
+import { QRCodeSVG } from 'qrcode.react';
 import api from '../../api/axios.config';
 import { useAuthStore } from '../../store/auth.store';
 
@@ -282,6 +283,36 @@ export default function VotingPage() {
                     <code className="block mt-1 text-[10px] text-slate-400 break-all font-mono leading-relaxed">
                       {results[election.id] ?? 'Registrado anteriormente'}
                     </code>
+
+                    {/* QR con el ID de transacción, para verificar el voto
+                        escaneándolo. Solo cuando hay un txId de esta sesión. */}
+                    {results[election.id] && (
+                      <div className="mt-4 flex items-center gap-4">
+                        <div className="bg-white p-2 rounded-xl border border-slate-200 shrink-0">
+                          <QRCodeSVG
+                            value={results[election.id]}
+                            size={96}
+                            level="M"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2 min-w-0">
+                          <p className="text-[11px] text-slate-500 leading-snug">
+                            Escanea este código para obtener el ID de tu
+                            transacción y verificar tu voto.
+                          </p>
+                          <button
+                            onClick={() =>
+                              navigator.clipboard?.writeText(
+                                results[election.id],
+                              )
+                            }
+                            className="self-start text-[11px] font-bold text-indigo-600 hover:text-indigo-700 cursor-pointer"
+                          >
+                            Copiar ID de transacción
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
