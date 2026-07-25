@@ -18,6 +18,7 @@ import AdminLayout from '../components/layout/AdminLayout';
 import VoterLayout from '../components/layout/VoterLayout';
 import PublicLayout from '../components/layout/PublicLayout';
 import ProtectedRoute from './ProtectedRoute';
+import NavAssistant from '../components/NavAssistant';
 
 /** Redirige al home según el rol del usuario autenticado */
 function RootRedirect() {
@@ -156,6 +157,7 @@ export default function AppRouter() {
 
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
+      <NavAssistant />
     </BrowserRouter>
   );
 }

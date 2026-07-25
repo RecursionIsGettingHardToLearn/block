@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuditModule } from './audit/audit.module';
 import { CaModule } from './ca/ca.module';
 import { ReportsModule } from './reports/reports.module';
+import { NavAssistantModule } from './nav-assistant/nav-assistant.module';
 import { AuthModule } from './auth/auth.module';
 import { ChannelsModule } from './channels/channels.module';
 import { DatabaseModule } from './database/database.module';
@@ -28,6 +29,7 @@ import { UsersModule } from './users/users.module';
     AuditModule,
     CaModule,
     ReportsModule,
+    NavAssistantModule,
   ],
   controllers: [AppController],
   providers: [AppService],
