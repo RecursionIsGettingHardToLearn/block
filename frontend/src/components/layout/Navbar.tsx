@@ -35,7 +35,7 @@ export default function Navbar() {
           <Vote size={15} className="text-indigo-200" />
         </div>
         <span className="font-bold text-white tracking-tight text-sm">
-          FICCT <span className="text-indigo-300 font-medium">E-Voting</span>
+          <span className="text-indigo-300 font-medium">E-Voting</span>
         </span>
       </div>
 

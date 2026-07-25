@@ -17,7 +17,7 @@ class BlockApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'FICCT E-Voting',
+      title: 'E-Voting',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       // Si ya hay sesión, entra directo; si no, al login.

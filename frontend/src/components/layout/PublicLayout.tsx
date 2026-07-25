@@ -17,7 +17,7 @@ export default function PublicLayout() {
               className="text-lg font-black tracking-tighter"
               style={{ color: 'var(--text-1)' }}
             >
-              FICCT E-Voting
+              E-Voting
             </h1>
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-40">
               Portal de Resultados Públicos

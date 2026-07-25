@@ -79,7 +79,7 @@ export default function Sidebar() {
           </div>
           <div className="flex flex-col">
             <span className="text-xs font-black uppercase tracking-tight text-slate-900">
-              FICCT Vote
+              E-Voting
             </span>
             <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
               Blockchain

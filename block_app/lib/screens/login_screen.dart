@@ -75,19 +75,20 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Container(
-                  width: 72,
-                  height: 72,
+                  width: 88,
+                  height: 88,
                   alignment: Alignment.center,
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.marca.withValues(alpha: 0.1),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                  child: const Icon(Icons.how_to_vote,
-                      color: AppColors.marca, size: 36),
+                  child: Image.asset('assets/logo.png'),
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'FICCT E-Voting',
+                  'E-Voting',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 24,
