@@ -4,7 +4,12 @@ import { DatabaseService } from '../database/database.service';
 /** Resumen de la red completa, para el reporte del ADMINISTRADOR. */
 export interface NetworkReport {
   generadoEn: string;
-  usuarios: { total: number; porRol: Record<string, number> };
+  usuarios: {
+    total: number;
+    porRol: Record<string, number>;
+    // Lista detallada, para reportes tipo "listar todos los usuarios".
+    lista: { nombre: string; email: string; rol: string }[];
+  };
   elecciones: { total: number; porEstado: Record<string, number> };
   canales: { nombre: string; descripcion: string | null; activo: boolean }[];
   nodos: { nombre: string; endpoint: string; activo: boolean }[];
@@ -42,27 +47,33 @@ export class ReportsService {
 
   /** Estado agregado de toda la red. */
   async getNetworkReport(): Promise<NetworkReport> {
-    const [usuarios, elecciones, canales, nodos, votos] = await Promise.all([
-      this.db.query<{ rol: string; count: string }>(
-        `SELECT rol, COUNT(*) AS count FROM usuarios GROUP BY rol`,
-      ),
-      this.db.query<{ estado: string; count: string }>(
-        `SELECT estado, COUNT(*) AS count FROM elecciones GROUP BY estado`,
-      ),
-      this.db.query<{
-        nombre: string;
-        descripcion: string | null;
-        activo: boolean;
-      }>(
-        `SELECT nombre, descripcion, activo FROM canales_fabric ORDER BY creado_en`,
-      ),
-      this.db.query<{ nombre: string; endpoint: string; activo: boolean }>(
-        `SELECT nombre, endpoint, activo FROM nodos_fabric ORDER BY prioridad`,
-      ),
-      this.db.query<{ estado: string; count: string }>(
-        `SELECT estado, COUNT(*) AS count FROM recibos_voto GROUP BY estado`,
-      ),
-    ]);
+    const [usuarios, elecciones, canales, nodos, votos, listaUsuarios] =
+      await Promise.all([
+        this.db.query<{ rol: string; count: string }>(
+          `SELECT rol, COUNT(*) AS count FROM usuarios GROUP BY rol`,
+        ),
+        this.db.query<{ estado: string; count: string }>(
+          `SELECT estado, COUNT(*) AS count FROM elecciones GROUP BY estado`,
+        ),
+        this.db.query<{
+          nombre: string;
+          descripcion: string | null;
+          activo: boolean;
+        }>(
+          `SELECT nombre, descripcion, activo FROM canales_fabric ORDER BY creado_en`,
+        ),
+        this.db.query<{ nombre: string; endpoint: string; activo: boolean }>(
+          `SELECT nombre, endpoint, activo FROM nodos_fabric ORDER BY prioridad`,
+        ),
+        this.db.query<{ estado: string; count: string }>(
+          `SELECT estado, COUNT(*) AS count FROM recibos_voto GROUP BY estado`,
+        ),
+        // Lista detallada de usuarios: nombre, correo y rol. Limitada a 500
+        // para no inflar el prompt de la IA si el padrón fuera enorme.
+        this.db.query<{ nombre: string; email: string; rol: string }>(
+          `SELECT nombre, email, rol FROM usuarios ORDER BY rol, nombre LIMIT 500`,
+        ),
+      ]);
 
     const porRol: Record<string, number> = {};
     let totalUsuarios = 0;
@@ -85,7 +96,7 @@ export class ReportsService {
 
     return {
       generadoEn: new Date().toISOString(),
-      usuarios: { total: totalUsuarios, porRol },
+      usuarios: { total: totalUsuarios, porRol, lista: listaUsuarios.rows },
       elecciones: { total: totalElecciones, porEstado },
       canales: canales.rows,
       nodos: nodos.rows,
