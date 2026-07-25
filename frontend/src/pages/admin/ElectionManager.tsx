@@ -13,6 +13,7 @@ import {
   Network,
   Server,
   Radio,
+  RefreshCw,
 } from 'lucide-react';
 import { useElections } from '../../hooks/useElections';
 import StatusBadge from '../../components/common/StatusBadge';
@@ -86,12 +87,6 @@ export default function ElectionManager() {
       .then(({ data }) => setNodes(data))
       .catch(() => {});
   }, []);
-
-  // Auto-refresh cada 30 s para reflejar cierres automáticos del backend
-  useEffect(() => {
-    const id = setInterval(fetchElections, 30_000);
-    return () => clearInterval(id);
-  }, [fetchElections]);
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
@@ -217,7 +212,7 @@ export default function ElectionManager() {
     }
   }
 
-  if (loading)
+  if (loading && elections.length === 0)
     return (
       <div
         className="flex items-center justify-center h-48"
@@ -240,22 +235,37 @@ export default function ElectionManager() {
             registrada{elections.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border-0 cursor-pointer transition-all"
-          style={
-            showForm
-              ? {
-                  background: 'var(--surface-2)',
-                  color: 'var(--text-2)',
-                  border: '1px solid var(--border)',
-                }
-              : { background: 'var(--brand)', color: '#fff' }
-          }
-        >
-          {showForm ? <X size={14} /> : <Plus size={14} />}
-          {showForm ? 'Cancelar' : 'Nueva elección'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchElections}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border cursor-pointer disabled:opacity-50"
+            style={{
+              background: 'var(--surface-2)',
+              color: 'var(--text-2)',
+              borderColor: 'var(--border)',
+            }}
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Actualizar
+          </button>
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border-0 cursor-pointer transition-all"
+            style={
+              showForm
+                ? {
+                    background: 'var(--surface-2)',
+                    color: 'var(--text-2)',
+                    border: '1px solid var(--border)',
+                  }
+                : { background: 'var(--brand)', color: '#fff' }
+            }
+          >
+            {showForm ? <X size={14} /> : <Plus size={14} />}
+            {showForm ? 'Cancelar' : 'Nueva elección'}
+          </button>
+        </div>
       </div>
 
       {/* Create form */}
