@@ -137,6 +137,12 @@ export interface NavSuggestion {
   pasos: string[];
 }
 
+/** Un turno previo de la conversación, para dar continuidad. */
+export interface NavTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 @Injectable()
 export class NavAssistantService {
   private readonly logger = new Logger(NavAssistantService.name);
@@ -165,7 +171,11 @@ export class NavAssistantService {
    * por su rol. Devuelve un mensaje-guía, el destino (para el botón «Ir») y
    * unos pasos. Si nada encaja, destino es null y el mensaje lo explica.
    */
-  async sugerir(rol: string, consulta: string): Promise<NavSuggestion> {
+  async sugerir(
+    rol: string,
+    consulta: string,
+    historial: NavTurn[] = [],
+  ): Promise<NavSuggestion> {
     const client = this.getClient();
     const model = this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4o-mini';
 
@@ -178,20 +188,22 @@ export class NavAssistantService {
       .map((d) => `- id: ${d.id} | ${d.titulo}: ${d.descripcion}`)
       .join('\n');
 
-    const system = `Eres un asistente de navegación de un sistema de votación electrónica. El usuario (rol: ${rol}) describe lo que quiere hacer y tú lo diriges al lugar correcto.
+    const system = `Eres un asistente conversacional de un sistema de votación electrónica sobre blockchain. Ayudas al usuario (rol: ${rol}) a moverse por la aplicación y respondes sus dudas sobre cómo hacer las cosas. Mantienes el hilo de la conversación: si el usuario hace una pregunta de seguimiento, la interpretas en el contexto de lo que ya se habló.
 
 Destinos disponibles para este usuario:
 ${catalogo}
 
 Responde ÚNICAMENTE con un objeto JSON válido (sin markdown) con esta forma:
 {
-  "destinoId": "el id EXACTO de la lista que mejor responde, o null si ninguno aplica",
-  "mensaje": "1-2 frases guiando al usuario, en español y en tono amable",
-  "pasos": ["paso 1", "paso 2"]  // pasos concretos una vez en esa pantalla; [] si no aplica
+  "destinoId": "el id EXACTO de la lista al que llevar al usuario, o null si su mensaje no requiere ir a ninguna pantalla",
+  "mensaje": "tu respuesta conversacional, en español y en tono amable y cercano",
+  "pasos": ["paso 1", "paso 2"]  // pasos concretos dentro de esa pantalla; [] si no aplica
 }
 
 Reglas:
 - destinoId DEBE ser uno de los id listados, tal cual, o null. Nunca inventes un id ni una ruta.
+- Conversa con naturalidad: puedes saludar, aclarar dudas y hacer preguntas de vuelta si la petición es ambigua (en ese caso destinoId es null hasta tener claro a dónde llevarlo).
+- Si la intención corresponde a una pantalla, pon su destinoId y explica brevemente qué hará allí.
 - Si la intención no corresponde a ninguna pantalla disponible para este rol, usa null y explica amablemente qué sí puede hacer.
 - Los pasos deben referirse a acciones reales dentro de esa pantalla (botones, campos), no a cómo llegar.
 - Todo en español.`;
@@ -201,9 +213,11 @@ Reglas:
         model,
         messages: [
           { role: 'system', content: system },
+          // El historial previo da continuidad conversacional.
+          ...historial.map((t) => ({ role: t.role, content: t.content })),
           { role: 'user', content: consulta },
         ],
-        temperature: 0.1,
+        temperature: 0.2,
         response_format: { type: 'json_object' },
       });
       const raw = completion.choices[0]?.message?.content ?? '{}';
@@ -226,6 +240,31 @@ Reglas:
       this.logger.error(`Fallo el asistente de navegación: ${msg}`);
       throw new ServiceUnavailableException(
         'No se pudo consultar el asistente. Revisa la clave o inténtalo más tarde.',
+      );
+    }
+  }
+
+  /**
+   * Voz → texto (Whisper). Recibe el audio grabado en el navegador y devuelve
+   * el texto, para que el usuario le hable al asistente en vez de escribir.
+   */
+  async transcribe(audio: Buffer, filename: string): Promise<string> {
+    const client = this.getClient();
+    const model = this.config.get<string>('OPENAI_STT_MODEL') ?? 'whisper-1';
+    try {
+      const { toFile } = await import('openai');
+      const file = await toFile(audio, filename);
+      const result = await client.audio.transcriptions.create({
+        file,
+        model,
+        language: 'es',
+      });
+      return result.text;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'error desconocido';
+      this.logger.error(`Fallo la transcripción (Whisper): ${msg}`);
+      throw new ServiceUnavailableException(
+        'No se pudo transcribir el audio. Revisa la clave o inténtalo más tarde.',
       );
     }
   }
