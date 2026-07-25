@@ -7,8 +7,11 @@ import {
   ParseUUIDPipe,
   Post,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -16,6 +19,12 @@ import { RolesGuard } from '../auth/roles.guard';
 import { GenerateReportDto } from './dto/generate-report.dto';
 import { ReportsAiService } from './reports-ai.service';
 import { ReportsService } from './reports.service';
+
+/** Solo los campos del archivo subido que este controlador necesita. */
+interface AudioSubido {
+  buffer: Buffer;
+  originalname: string;
+}
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -77,5 +86,24 @@ export class ReportsController {
 
     const spec = await this.ai.generarReporte(contexto, dto.tipo, dto.peticion);
     return spec;
+  }
+
+  /**
+   * Voz → texto (Whisper). Recibe el audio grabado en el navegador y devuelve
+   * el texto reconocido, para dictar la petición del reporte en vez de
+   * escribirla. Disponible para ADMINISTRADOR y AUDITOR (los que usan reportes).
+   */
+  @Post('transcribe')
+  @Roles('ADMINISTRADOR', 'AUDITOR')
+  @UseInterceptors(FileInterceptor('audio'))
+  async transcribe(@UploadedFile() audio?: AudioSubido) {
+    if (!audio) {
+      throw new ForbiddenException('No se recibió audio.');
+    }
+    const texto = await this.ai.transcribe(
+      audio.buffer,
+      audio.originalname || 'audio.webm',
+    );
+    return { texto };
   }
 }

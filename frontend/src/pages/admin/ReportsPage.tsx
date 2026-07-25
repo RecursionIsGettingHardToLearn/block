@@ -5,6 +5,8 @@ import {
   BarChart3,
   FileText,
   FileSpreadsheet,
+  Mic,
+  Square,
 } from 'lucide-react';
 import {
   BarChart,
@@ -73,6 +75,67 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const visualRef = useRef<HTMLDivElement>(null);
+
+  // Dictado por voz de la petición (Whisper). El micrófono graba con
+  // MediaRecorder del navegador y el audio se envía al backend, que llama a
+  // Whisper (la clave de OpenAI nunca sale del servidor).
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  async function toggleRecording() {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop()); // libera el micrófono
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await transcribeAudio(blob);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch {
+      setError(
+        'No se pudo acceder al micrófono. Revisa los permisos del navegador.',
+      );
+    }
+  }
+
+  async function transcribeAudio(blob: Blob) {
+    setRecording(false);
+    setTranscribing(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('audio', blob, 'peticion.webm');
+      const { data } = await api.post<{ texto: string }>(
+        '/reports/transcribe',
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      // La transcripción se coloca en el campo para revisarla antes de generar
+      // (no dispara la generación sola).
+      setPeticion((prev) => (prev ? `${prev} ${data.texto}` : data.texto));
+    } catch (err: unknown) {
+      const detalle = (
+        err as { response?: { data?: { message?: string | string[] } } }
+      )?.response?.data?.message;
+      const msg = Array.isArray(detalle) ? detalle[0] : detalle;
+      setError(msg ?? 'No se pudo transcribir el audio.');
+    } finally {
+      setTranscribing(false);
+    }
+  }
 
   const reportableElections = useMemo(
     () => elections.filter((e) => e.status !== 'BORRADOR'),
@@ -241,11 +304,35 @@ export default function ReportsPage() {
       ) : (
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex gap-2">
+            <button
+              onClick={toggleRecording}
+              disabled={transcribing || generating}
+              title={
+                recording ? 'Detener grabación' : 'Dictar la petición por voz'
+              }
+              className={`px-3 py-3 rounded-xl cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+                recording
+                  ? 'bg-red-600 text-white animate-pulse'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {transcribing ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : recording ? (
+                <Square size={16} />
+              ) : (
+                <Mic size={16} />
+              )}
+            </button>
             <input
               value={peticion}
               onChange={(e) => setPeticion(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && generar()}
-              placeholder="Ej: usuarios por rol, participacion por estado..."
+              placeholder={
+                recording
+                  ? 'Grabando… habla ahora'
+                  : 'Ej: usuarios por rol, participacion por estado...'
+              }
               disabled={generating}
               className="flex-1 px-4 py-3 rounded-xl border-2 border-slate-200 bg-slate-50 text-sm outline-none focus:border-indigo-400 disabled:opacity-50"
             />
