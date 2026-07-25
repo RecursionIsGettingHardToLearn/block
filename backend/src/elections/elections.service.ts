@@ -169,9 +169,9 @@ export class ElectionsService {
       voto: boolean;
     }>(
       `SELECT u.id,
-              u.ru,
+              u.identificador AS ru,
               u.nombre,
-              u.correo,
+              u.email AS correo,
               EXISTS(
                 SELECT 1 FROM recibos_voto rv
                 WHERE rv.id_usuario = u.id
