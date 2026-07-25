@@ -142,7 +142,7 @@ export default function AdminResults() {
 
         <button
           onClick={refresh}
-          className="flex items-center gap-2 px-6 py-4 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 transition-all shadow-lg active:scale-95"
+          className="flex items-center gap-2 px-6 py-4 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all shadow-sm active:scale-95"
         >
           <RefreshCw size={20} />
           <span className="text-xs font-black uppercase tracking-widest">
@@ -243,35 +243,36 @@ export default function AdminResults() {
 
                 return (
                   <div key={election.id} className="flex flex-col gap-6">
-                    {/* Election Header Card */}
-                    <div
-                      className={`text-white p-8 rounded-[2.5rem] shadow-xl overflow-hidden ${
-                        election.status === 'ACTIVA'
-                          ? 'bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-800'
-                          : isFinal
-                            ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-800'
-                            : 'bg-gradient-to-br from-slate-900 to-slate-800'
-                      }`}
-                    >
+                    {/* Election Header Card — estilo claro, coherente con el
+                        resto de la app (tarjeta blanca, borde suave). */}
+                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                        <div className="relative z-10">
-                          <div className="flex items-center gap-3 mb-3">
+                        <div>
+                          <div className="flex items-center gap-3 mb-2">
                             <div
                               className={`w-3 h-3 rounded-full ${
                                 election.status === 'ACTIVA'
                                   ? 'bg-emerald-500 animate-pulse'
                                   : election.status === 'CERRADA'
                                     ? 'bg-amber-500'
-                                    : 'bg-slate-500'
+                                    : 'bg-slate-400'
                               }`}
                             />
-                            <span className="text-[9px] font-black uppercase tracking-widest text-indigo-300">
+                            <span
+                              className={`text-[9px] font-black uppercase tracking-widest ${
+                                election.status === 'ACTIVA'
+                                  ? 'text-emerald-600'
+                                  : isFinal
+                                    ? 'text-amber-600'
+                                    : 'text-slate-400'
+                              }`}
+                            >
                               {isFinal
                                 ? 'RESULTADO FINAL'
                                 : election.status.replace('_', ' ')}
                             </span>
                           </div>
-                          <h3 className="text-2xl md:text-3xl font-black tracking-tighter uppercase italic leading-none">
+                          <h3 className="text-2xl md:text-3xl font-black tracking-tight text-slate-800 leading-none">
                             {election.title}
                           </h3>
                           {election.description && (
@@ -280,7 +281,7 @@ export default function AdminResults() {
                             </p>
                           )}
                           {isFinal && (
-                            <p className="text-[10px] text-emerald-300 mt-3 font-black uppercase tracking-[0.25em]">
+                            <p className="text-[10px] text-emerald-600 mt-3 font-black uppercase tracking-[0.25em]">
                               Escrutinio consolidado con {totalVotos} voto
                               {totalVotos !== 1 ? 's' : ''}
                             </p>
@@ -288,29 +289,29 @@ export default function AdminResults() {
                         </div>
                       </div>
 
-                      {/* Stats Bar */}
-                      <div className="grid grid-cols-3 bg-indigo-600/90 text-white py-5 mt-6 rounded-2xl">
-                        <div className="flex flex-col items-center border-r border-white/20">
-                          <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
+                      {/* Stats Bar — tarjetas claras */}
+                      <div className="grid grid-cols-3 gap-4 mt-6">
+                        <div className="bg-slate-50 rounded-2xl py-4 flex flex-col items-center">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">
                             Total Votos
                           </span>
-                          <span className="text-3xl font-black italic">
+                          <span className="text-3xl font-black text-slate-800">
                             {totalVotos}
                           </span>
                         </div>
-                        <div className="flex flex-col items-center border-r border-white/20">
-                          <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
+                        <div className="bg-slate-50 rounded-2xl py-4 flex flex-col items-center">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">
                             Candidatos
                           </span>
-                          <span className="text-3xl font-black italic">
+                          <span className="text-3xl font-black text-slate-800">
                             {election.candidates.length}
                           </span>
                         </div>
-                        <div className="flex flex-col items-center">
-                          <span className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">
+                        <div className="bg-slate-50 rounded-2xl py-4 flex flex-col items-center">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">
                             Cargo
                           </span>
-                          <span className="text-lg font-black italic text-center px-4 line-clamp-2">
+                          <span className="text-base font-black text-center px-2 line-clamp-2 text-slate-800">
                             {election.candidates.length > 0
                               ? election.candidates[0].position || 'N/A'
                               : 'N/A'}
@@ -382,16 +383,16 @@ export default function AdminResults() {
                                 {result.name}
                               </h4>
 
-                              <div className="w-full bg-slate-900 text-white rounded-[1.25rem] p-4 shadow-lg mt-auto">
+                              <div className="w-full bg-slate-50 rounded-[1.25rem] p-4 mt-auto">
                                 <div className="flex items-center justify-between mb-2">
-                                  <span className="text-[8px] font-black opacity-40 uppercase">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase">
                                     Escrutinio
                                   </span>
-                                  <span className="text-indigo-400 font-black italic text-base">
+                                  <span className="text-indigo-600 font-black text-base">
                                     {pct}%
                                   </span>
                                 </div>
-                                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
+                                <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-3">
                                   <div
                                     className={`h-full transition-all duration-1000 ${leading ? 'bg-gradient-to-r from-amber-400 to-amber-500' : 'bg-indigo-500'}`}
                                     style={{ width: `${pct}%` }}
