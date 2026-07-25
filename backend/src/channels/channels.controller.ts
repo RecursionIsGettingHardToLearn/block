@@ -42,14 +42,16 @@ export class ChannelsController {
   }
 
   @Post(':channelName/peers/:nodeId')
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRADOR')
   joinPeer(
     @Param('channelName') channelName: string,
     @Param('nodeId', ParseUUIDPipe) nodeId: string,
   ) {
-    return this.channelsService.joinPeer(channelName, nodeId);
+    // Se lanza en segundo plano y responde de inmediato con el trabajo; su
+    // avance se consulta en GET /channels/creations, como crear/desplegar.
+    return this.channelsService.startJoinPeer(channelName, nodeId);
   }
 
   @Post(':channelName/chaincode')

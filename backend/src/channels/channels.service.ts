@@ -71,7 +71,7 @@ interface FabricChannelRow {
 /** Operación lenta de canal ejecutándose (o terminada) en segundo plano. */
 export interface ChannelJob {
   id: string;
-  tipo: 'CREAR_CANAL' | 'DESPLEGAR_CHAINCODE';
+  tipo: 'CREAR_CANAL' | 'DESPLEGAR_CHAINCODE' | 'UNIR_PEER';
   channelName: string;
   estado: 'EN_PROGRESO' | 'COMPLETADO' | 'FALLIDO';
   logs: string[];
@@ -426,13 +426,55 @@ export class ChannelsService {
     };
   }
 
+  /**
+   * Une un peer a un canal EN SEGUNDO PLANO y devuelve el trabajo de inmediato.
+   * Igual que crear un canal o desplegar chaincode, unir un peer puede tardar
+   * (el peer descarga el bloque del canal y se suma), y atarlo a la petición
+   * HTTP obligaba a esperar en la página. El POST responde al instante con el
+   * trabajo y la interfaz consulta el avance en GET /channels/creations, donde
+   * aparece junto a los demás. Una operación de canal a la vez: comparten el
+   * contenedor cli.
+   */
+  startJoinPeer(channelName: string, nodeId: string): ChannelJob {
+    this.assertNoJobRunning();
+
+    const job: ChannelJob = {
+      id: randomUUID(),
+      tipo: 'UNIR_PEER',
+      channelName,
+      estado: 'EN_PROGRESO',
+      logs: [],
+      iniciadoEn: new Date(),
+    };
+    this.channelJobs.set(job.id, job);
+    this.pruneJobs();
+
+    void this.joinPeer(channelName, nodeId, (msg) => job.logs.push(msg))
+      .then(() => {
+        job.estado = 'COMPLETADO';
+        job.finalizadoEn = new Date();
+      })
+      .catch((err: unknown) => {
+        job.estado = 'FALLIDO';
+        job.error = getErrorMessage(err);
+        job.finalizadoEn = new Date();
+        job.logs.push(`[ERROR] ${job.error}`);
+      });
+
+    return job;
+  }
+
   async joinPeer(
     channelName: string,
     nodeId: string,
+    onLog?: (msg: string) => void,
   ): Promise<{ logs: string }> {
     await this.assertChannelExists(channelName);
     const logs: string[] = [];
-    const log = (msg: string) => logs.push(msg);
+    const log = (msg: string) => {
+      logs.push(msg);
+      onLog?.(msg);
+    };
     const node = await this.getNodeById(nodeId);
     if (!node.activo)
       throw new BadRequestException(

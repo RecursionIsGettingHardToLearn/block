@@ -51,7 +51,7 @@ export default function ChannelsPage() {
   // entrar, así que navegar a otra página no pierde el progreso.
   interface ChannelJob {
     id: string;
-    tipo: 'CREAR_CANAL' | 'DESPLEGAR_CHAINCODE';
+    tipo: 'CREAR_CANAL' | 'DESPLEGAR_CHAINCODE' | 'UNIR_PEER';
     channelName: string;
     estado: 'EN_PROGRESO' | 'COMPLETADO' | 'FALLIDO';
     logs: string[];
@@ -151,13 +151,14 @@ export default function ChannelsPage() {
     setBusyAction(`join:${channelName}`);
     setError(null);
     try {
-      const { data } = await api.post<{ logs: string }>(
+      // El backend une el peer en segundo plano y responde con el trabajo.
+      // Se reutiliza el mismo seguimiento que la creación de canal: el job
+      // aparece en /channels/creations y el useEffect existente consulta su
+      // avance cada 2 s hasta que termina.
+      const { data } = await api.post<ChannelJob>(
         `/channels/${channelName}/peers/${nodeId}`,
       );
-      setLogsTitle(`Unir peer: ${channelName}`);
-      setLogs(data.logs);
-      setShowLogs(true);
-      await load();
+      setCreateJob(data);
     } catch (e: unknown) {
       const msg = getApiErrorMessage(e, 'Error al unir peer al canal');
       setError(msg);
@@ -451,15 +452,22 @@ export default function ChannelsPage() {
               <span className="text-sm font-semibold">
                 {(() => {
                   const cc = createJob.tipo === 'DESPLEGAR_CHAINCODE';
-                  const acc = cc
-                    ? 'Desplegando chaincode en'
-                    : 'Creando el canal';
-                  const okv = cc
-                    ? `✅ Chaincode desplegado en ${createJob.channelName}`
-                    : `✅ Canal ${createJob.channelName} creado correctamente`;
-                  const fail = cc
-                    ? `❌ Falló el despliegue de chaincode en ${createJob.channelName}`
-                    : `❌ Falló la creación del canal ${createJob.channelName}`;
+                  const join = createJob.tipo === 'UNIR_PEER';
+                  const acc = join
+                    ? 'Uniendo peer al canal'
+                    : cc
+                      ? 'Desplegando chaincode en'
+                      : 'Creando el canal';
+                  const okv = join
+                    ? `✅ Peer unido al canal ${createJob.channelName}`
+                    : cc
+                      ? `✅ Chaincode desplegado en ${createJob.channelName}`
+                      : `✅ Canal ${createJob.channelName} creado correctamente`;
+                  const fail = join
+                    ? `❌ Falló unir el peer al canal ${createJob.channelName}`
+                    : cc
+                      ? `❌ Falló el despliegue de chaincode en ${createJob.channelName}`
+                      : `❌ Falló la creación del canal ${createJob.channelName}`;
                   if (createJob.estado === 'EN_PROGRESO')
                     return `${acc} ${createJob.channelName}… (puedes navegar a otra página)`;
                   if (createJob.estado === 'COMPLETADO') return okv;
