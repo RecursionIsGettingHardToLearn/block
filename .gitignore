@@ -20,8 +20,5 @@ frontend/.env
 # Documentación privada con datos de infraestructura y credenciales (no subir)
 local/
 
-# App móvil Flutter (proyecto aparte, no se versiona con el monorepo)
-block_app/
-
 
 comand.md
