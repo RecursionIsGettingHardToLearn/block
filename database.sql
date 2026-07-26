@@ -261,6 +261,20 @@ CREATE INDEX idx_auditoria_seguridad ON eventos_auditoria(id_organizacion, cread
 CREATE INDEX idx_usuario_canales_usuario ON usuario_canales(id_usuario);
 CREATE INDEX idx_usuario_canales_canal   ON usuario_canales(canal_fabric);
 
+-- Dispositivos móviles registrados para notificaciones push (FCM). Cada fila es
+-- un token de dispositivo asociado a un usuario. Un mismo usuario puede tener
+-- varios dispositivos; un token pertenece a un solo usuario (UNIQUE).
+CREATE TABLE dispositivos (
+  id             UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id_usuario     UUID         NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  token          TEXT         NOT NULL UNIQUE,
+  plataforma     VARCHAR(20)  NOT NULL DEFAULT 'android',
+  creado_en      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  actualizado_en TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_dispositivos_usuario ON dispositivos(id_usuario);
+
 -- ── DATOS INICIALES ───────────────────────────────────────────────────────────
 
 -- Organización base (UUID fijo requerido por el backend)

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 import '../services/session_service.dart';
+import '../services/push_service.dart';
 import '../theme.dart';
 import 'home_router.dart';
 
@@ -46,6 +47,8 @@ class _LoginScreenState extends State<LoginScreen> {
         data['access_token'] as String,
         data['user'] as Map<String, dynamic>,
       );
+      // Registrar el dispositivo para notificaciones push (no bloquea el login).
+      PushService.instance.registrarDispositivo();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeRouter()),

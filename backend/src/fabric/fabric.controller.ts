@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { EmitVoteDto } from './dto/emit-vote.dto';
 import { FabricService } from './fabric.service';
 
@@ -25,6 +26,7 @@ export class FabricController {
   constructor(
     private readonly fabricService: FabricService,
     private readonly usersService: UsersService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -92,6 +94,10 @@ export class FabricController {
       errorMessage: null,
       canal: channel,
     });
+
+    // Aviso push al votante (fire-and-forget): el servicio captura sus propios
+    // errores, así que esto nunca afecta la respuesta del voto.
+    void this.notifications.notificarVotoEmitido(userId, dto.electionId);
 
     return { txId, channel };
   }
