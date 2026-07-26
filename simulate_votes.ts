@@ -5,7 +5,7 @@ async function simulate() {
     host: 'localhost',
     port: 5432,
     user: 'postgres',
-    password: 'muerte',
+    password: 'postgres',
     database: 'evoting_db',
   });
 
