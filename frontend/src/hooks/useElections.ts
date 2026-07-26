@@ -32,7 +32,9 @@ export function useElections() {
     channelName?: string;
   }): Promise<Election> {
     const { data } = await api.post<Election>('/elections', payload);
-    setElections((prev) => [...prev, data]);
+    // La elección nueva se coloca al inicio (arriba), coherente con el orden
+    // del backend (creado_en DESC: las más recientes primero).
+    setElections((prev) => [data, ...prev]);
     return data;
   }
 
