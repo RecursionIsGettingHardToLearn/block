@@ -452,7 +452,7 @@ export default function UsersPage() {
                   'Carrera',
                   'Rol',
                   'Canales',
-                  'Votó',
+                  // 'Votó', // columna oculta (comentada); descomentar para mostrarla
                   'Estado',
                   'Acciones',
                 ].map((h) => (
@@ -539,9 +539,11 @@ export default function UsersPage() {
                         <span className="text-slate-400">Sin canal</span>
                       )}
                     </td>
+                    {/* Columna "Votó" oculta (comentada); descomentar para mostrarla
                     <td className="px-5 py-3 text-xs text-emerald-600">
                       {user.hasVoted ? '✓ Sí' : '—'}
                     </td>
+                    */}
                     <td className="px-5 py-3">
                       <button
                         onClick={() => handleToggle(user)}
