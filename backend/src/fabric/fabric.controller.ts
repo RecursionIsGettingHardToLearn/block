@@ -114,6 +114,17 @@ export class FabricController {
     return this.fabricService.getResultados(electionId, true);
   }
 
+  /**
+   * Panel de auditoría de una elección: transacciones en la blockchain e
+   * integridad (ledger vs. recibos). Para AUDITOR y ADMINISTRADOR.
+   */
+  @Get('audit/:electionId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('AUDITOR', 'ADMINISTRADOR')
+  getAudit(@Param('electionId', ParseUUIDPipe) electionId: string) {
+    return this.fabricService.getAuditoria(electionId);
+  }
+
   @Get('my-receipts')
   @UseGuards(JwtAuthGuard)
   getMyReceipts(@Req() req: Request & { user: { userId: string } }) {

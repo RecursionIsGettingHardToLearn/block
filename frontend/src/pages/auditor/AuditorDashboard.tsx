@@ -6,16 +6,41 @@ import {
   ChevronDown,
   ShieldCheck,
   BarChart,
+  CheckCircle2,
+  XCircle,
+  Boxes,
 } from 'lucide-react';
 import api from '../../api/axios.config';
 import type { TallyResult, Election } from '../../types';
 import { useElections } from '../../hooks/useElections';
 import StatusBadge from '../../components/common/StatusBadge';
 
+/** Datos de auditoría que devuelve el backend. */
+interface Auditoria {
+  electionId: string;
+  channel: string | null;
+  estado: string;
+  transacciones: {
+    txId: string | null;
+    numeroBloque: number | null;
+    estado: string;
+    creadoEn: string;
+    confirmadoEn: string | null;
+  }[];
+  integridad: {
+    recibosConfirmados: number;
+    votosEnLedger: number;
+    coincide: boolean;
+    pendientes: number;
+    fallidos: number;
+  };
+}
+
 export default function AuditorDashboard() {
   const { elections } = useElections();
   const [selectedId, setSelectedId] = useState('');
   const [tally, setTally] = useState<TallyResult | null>(null);
+  const [auditoria, setAuditoria] = useState<Auditoria | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -33,14 +58,19 @@ export default function AuditorDashboard() {
     setError('');
     setLoading(true);
     try {
-      const { data } = await api.get<TallyResult>(
-        `/fabric/results/${selectedId}`,
-      );
-      setTally(data);
+      // Se cargan en paralelo el conteo y los datos de auditoría (transacciones
+      // e integridad), que es lo que distingue al panel del auditor.
+      const [resTally, resAudit] = await Promise.all([
+        api.get<TallyResult>(`/fabric/results/${selectedId}`),
+        api.get<Auditoria>(`/fabric/audit/${selectedId}`),
+      ]);
+      setTally(resTally.data);
+      setAuditoria(resAudit.data);
     } catch (err) {
       console.error(err);
-      setError('No se pudieron cargar los resultados del ledger');
+      setError('No se pudieron cargar los datos de auditoría del ledger');
       setTally(null);
+      setAuditoria(null);
     } finally {
       setLoading(false);
     }
@@ -264,6 +294,157 @@ export default function AuditorDashboard() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Verificación de integridad: ledger vs. recibos */}
+      {auditoria && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-100">
+            <ShieldCheck size={18} className="text-indigo-600" />
+            <h3 className="text-sm font-black text-slate-800">
+              Verificación de integridad
+            </h3>
+          </div>
+          <div className="p-6">
+            <div
+              className={`flex items-center gap-3 rounded-xl p-4 mb-4 ${
+                auditoria.integridad.coincide
+                  ? 'bg-emerald-50 border border-emerald-200'
+                  : 'bg-amber-50 border border-amber-200'
+              }`}
+            >
+              {auditoria.integridad.coincide ? (
+                <CheckCircle2 size={22} className="text-emerald-600" />
+              ) : (
+                <XCircle size={22} className="text-amber-600" />
+              )}
+              <div>
+                <p
+                  className={`text-sm font-black ${
+                    auditoria.integridad.coincide
+                      ? 'text-emerald-700'
+                      : 'text-amber-700'
+                  }`}
+                >
+                  {auditoria.integridad.coincide
+                    ? 'Integridad verificada'
+                    : 'Discrepancia detectada'}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {auditoria.integridad.coincide
+                    ? 'Los votos contabilizados en la blockchain coinciden con los recibos confirmados.'
+                    : 'El conteo del ledger no coincide con los recibos confirmados. Revisar los votos pendientes o fallidos.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-black text-slate-800">
+                  {auditoria.integridad.votosEnLedger < 0
+                    ? '—'
+                    : auditoria.integridad.votosEnLedger}
+                </p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">
+                  En el ledger
+                </p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-black text-slate-800">
+                  {auditoria.integridad.recibosConfirmados}
+                </p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">
+                  Recibos OK
+                </p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-black text-amber-600">
+                  {auditoria.integridad.pendientes}
+                </p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">
+                  Pendientes
+                </p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-black text-red-600">
+                  {auditoria.integridad.fallidos}
+                </p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">
+                  Fallidos
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transacciones en la blockchain */}
+      {auditoria && auditoria.transacciones.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-100">
+            <Boxes size={18} className="text-indigo-600" />
+            <h3 className="text-sm font-black text-slate-800">
+              Transacciones en la blockchain
+            </h3>
+            <span className="ml-auto text-xs text-slate-400">
+              {auditoria.transacciones.length} registro
+              {auditoria.transacciones.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="text-left px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    ID de transacción
+                  </th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    Bloque
+                  </th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    Estado
+                  </th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">
+                    Fecha
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditoria.transacciones.map((t, i) => (
+                  <tr
+                    key={i}
+                    className="border-b border-slate-50 last:border-b-0"
+                  >
+                    <td className="px-6 py-2.5">
+                      <code className="text-[11px] font-mono text-slate-600 break-all">
+                        {t.txId ?? '—'}
+                      </code>
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">
+                      {t.numeroBloque ?? '—'}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          t.estado === 'CONFIRMADO'
+                            ? 'bg-emerald-50 text-emerald-600'
+                            : t.estado === 'PENDIENTE'
+                              ? 'bg-amber-50 text-amber-600'
+                              : 'bg-red-50 text-red-600'
+                        }`}
+                      >
+                        {t.estado}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">
+                      {new Date(t.creadoEn).toLocaleString('es-BO')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

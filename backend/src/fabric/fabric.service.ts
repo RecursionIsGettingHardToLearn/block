@@ -580,6 +580,106 @@ export class FabricService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Election closed on ledger — electionId: ${electionId}`);
   }
 
+  /**
+   * Datos de auditoría de una elección para el AUDITOR: la lista de
+   * transacciones registradas en la blockchain y una verificación de
+   * integridad (comparar cuántos votos hay en el ledger frente a los recibos
+   * confirmados). No revela por quién votó cada persona: las transacciones se
+   * listan por su identificador y estado, sin vincular candidato ni votante.
+   */
+  async getAuditoria(electionId: string): Promise<{
+    electionId: string;
+    channel: string | null;
+    estado: string;
+    transacciones: {
+      txId: string | null;
+      numeroBloque: number | null;
+      estado: string;
+      creadoEn: Date;
+      confirmadoEn: Date | null;
+    }[];
+    integridad: {
+      recibosConfirmados: number;
+      votosEnLedger: number;
+      coincide: boolean;
+      pendientes: number;
+      fallidos: number;
+    };
+  }> {
+    const estadoRes = await this.db.query<{ estado: string }>(
+      `SELECT estado FROM elecciones WHERE id = $1`,
+      [electionId],
+    );
+    const estado = estadoRes.rows[0]?.estado ?? 'DESCONOCIDO';
+
+    // Transacciones de la elección (sin candidato ni votante: solo la traza
+    // de la cadena). Las más recientes primero.
+    const txRes = await this.db.query<{
+      id_transaccion: string | null;
+      numero_bloque: string | null;
+      estado: string;
+      creado_en: Date;
+      confirmado_en: Date | null;
+      canal_fabric: string | null;
+    }>(
+      `SELECT id_transaccion, numero_bloque, estado, creado_en, confirmado_en, canal_fabric
+       FROM recibos_voto
+       WHERE id_eleccion = $1
+       ORDER BY creado_en DESC`,
+      [electionId],
+    );
+
+    const transacciones = txRes.rows.map((r) => ({
+      txId: r.id_transaccion,
+      numeroBloque: r.numero_bloque ? parseInt(r.numero_bloque, 10) : null,
+      estado: r.estado,
+      creadoEn: r.creado_en,
+      confirmadoEn: r.confirmado_en,
+    }));
+
+    const canal = txRes.rows[0]?.canal_fabric ?? null;
+
+    // Integridad: recibos confirmados vs. total del ledger (tally). Se comparan
+    // para detectar inconsistencias entre lo que el sistema registró y lo que
+    // la blockchain tiene contabilizado.
+    const recibosConfirmados = transacciones.filter(
+      (t) => t.estado === 'CONFIRMADO',
+    ).length;
+    const pendientes = transacciones.filter(
+      (t) => t.estado === 'PENDIENTE',
+    ).length;
+    const fallidos = transacciones.filter((t) => t.estado === 'FALLIDO').length;
+
+    // Total contabilizado en el ledger (suma del tally del chaincode).
+    let votosEnLedger = recibosConfirmados;
+    try {
+      const tally = await this.getResultados(electionId, true);
+      const suma = Object.values(tally.results ?? {}).reduce(
+        (a, b) => a + (typeof b === 'number' ? b : 0),
+        0,
+      );
+      votosEnLedger = suma;
+    } catch {
+      // Si no se puede leer el ledger (p. ej. red caída), se reporta el conteo
+      // de recibos y coincide=false para señalar que no se pudo cotejar.
+      votosEnLedger = -1;
+    }
+
+    return {
+      electionId,
+      channel: canal,
+      estado,
+      transacciones,
+      integridad: {
+        recibosConfirmados,
+        votosEnLedger,
+        coincide: votosEnLedger === recibosConfirmados,
+        pendientes,
+        fallidos,
+      },
+    };
+  }
+
   async saveSyncLog(data: {
     userId: string;
     electionId: string;
