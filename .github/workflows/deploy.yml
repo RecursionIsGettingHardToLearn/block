@@ -1,12 +1,14 @@
 name: Desplegar en Azure
 
-# Despliega en la maquina virtual de Azure. Solo corre si CI paso: nunca se
-# despliega codigo que no cumple los estandares.
+# Despliega en la maquina virtual de Azure.
+# Autodespliegue DESACTIVADO: ya no corre solo cuando CI termina. Solo se lanza
+# a mano desde la pestana Actions (o con `gh workflow run deploy.yml`).
+# Para reactivarlo, descomentar el bloque `workflow_run`.
 on:
-  workflow_run:
-    workflows: [CI]
-    branches: [main]
-    types: [completed]
+  # workflow_run:
+  #   workflows: [CI]
+  #   branches: [main]
+  #   types: [completed]
   workflow_dispatch:      # permite lanzarlo a mano desde la pestana Actions
 
 concurrency:

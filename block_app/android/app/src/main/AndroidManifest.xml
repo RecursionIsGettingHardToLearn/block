@@ -4,6 +4,10 @@
          "No se pudo conectar con el servidor" (el permiso solo se inyecta
          automaticamente en los builds de debug/profile, no en release). -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Android 13+ (API 33): sin este permiso el sistema no muestra las
+         notificaciones push aunque lleguen. firebase_messaging pide el permiso
+         en tiempo de ejecucion, pero debe estar declarado aqui. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="E-Voting"
         android:name="${applicationName}"

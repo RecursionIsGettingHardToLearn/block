@@ -19,6 +19,7 @@ frontend/.env
 
 # Documentación privada con datos de infraestructura y credenciales (no subir)
 local/
-
-
+venv/
 comand.md
+google-services.json
+firebase-service-account.json.json
