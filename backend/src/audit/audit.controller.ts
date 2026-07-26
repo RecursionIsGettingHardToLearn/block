@@ -3,12 +3,16 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { DatabaseService } from '../database/database.service';
+import { AnomalyService, ReporteAnomalias } from './anomaly.service';
 
 @Controller('audit')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'ADMINISTRADOR', 'AUDITOR')
 export class AuditController {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly anomaly: AnomalyService,
+  ) {}
 
   @Get('logs')
   async findAll(@Query('electionId') electionId?: string) {
@@ -40,5 +44,16 @@ export class AuditController {
             : new Date(createdAt).toISOString(),
       };
     });
+  }
+
+  /**
+   * Votos puntuados por el modelo de detección de anomalías (módulo ml/).
+   * Devuelve todos los votos con su bandera y score, los más anómalos primero.
+   */
+  @Get('anomalies')
+  detectAnomalies(
+    @Query('electionId') electionId?: string,
+  ): Promise<ReporteAnomalias> {
+    return this.anomaly.detectar(electionId);
   }
 }
