@@ -29,20 +29,31 @@ export class NotificationsService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
+    // Se admiten dos formas de dar la credencial de Firebase Admin:
+    //  - FIREBASE_CREDENTIALS_BASE64: el JSON de la cuenta de servicio
+    //    codificado en base64. Preferida en producción: la credencial vive
+    //    solo como variable de entorno/secreto, nada se escribe en disco.
+    //  - FIREBASE_CREDENTIALS_PATH: ruta a un archivo JSON. Cómoda en local.
+    const base64 = this.config.get<string>('FIREBASE_CREDENTIALS_BASE64');
     const ruta = this.config.get<string>('FIREBASE_CREDENTIALS_PATH');
-    if (!ruta) {
+    if (!base64 && !ruta) {
       this.logger.warn(
-        'FIREBASE_CREDENTIALS_PATH no configurado; las notificaciones push están deshabilitadas.',
+        'Sin credenciales de Firebase (FIREBASE_CREDENTIALS_BASE64 o FIREBASE_CREDENTIALS_PATH); las notificaciones push están deshabilitadas.',
       );
       return;
     }
     try {
-      const cuenta = JSON.parse(readFileSync(ruta, 'utf8')) as ServiceAccount;
+      const json = base64
+        ? Buffer.from(base64, 'base64').toString('utf8')
+        : readFileSync(ruta as string, 'utf8');
+      const cuenta = JSON.parse(json) as ServiceAccount;
       if (getApps().length === 0) {
         initializeApp({ credential: cert(cuenta) });
       }
       this.habilitado = true;
-      this.logger.log('Notificaciones push habilitadas (FCM).');
+      this.logger.log(
+        `Notificaciones push habilitadas (FCM) vía ${base64 ? 'base64' : 'archivo'}.`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`No se pudo inicializar Firebase Admin: ${msg}`);
