@@ -22,7 +22,6 @@ interface Auditoria {
   estado: string;
   transacciones: {
     txId: string | null;
-    numeroBloque: number | null;
     estado: string;
     creadoEn: string;
     confirmadoEn: string | null;
@@ -401,9 +400,6 @@ export default function AuditorDashboard() {
                     ID de transacción
                   </th>
                   <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    Bloque
-                  </th>
-                  <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
                     Estado
                   </th>
                   <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">
@@ -421,9 +417,6 @@ export default function AuditorDashboard() {
                       <code className="text-[11px] font-mono text-slate-600 break-all">
                         {t.txId ?? '—'}
                       </code>
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-600">
-                      {t.numeroBloque ?? '—'}
                     </td>
                     <td className="px-4 py-2.5">
                       <span
