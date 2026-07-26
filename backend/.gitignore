@@ -54,3 +54,7 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Clave de servicio de Firebase Admin (control total del proyecto — NUNCA subir)
+firebase-service-account.json
+*firebase-adminsdk*.json
