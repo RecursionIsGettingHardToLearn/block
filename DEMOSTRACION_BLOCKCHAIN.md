@@ -152,3 +152,73 @@ Devuelve algo como:
 - El **txId** del comprobante del votante es el mismo que aparece en el ledger.
   Esa correspondencia, verificable por cualquiera, es la prueba de que el voto
   del ciudadano quedó registrado en la cadena.
+
+---
+
+## Comandos para Windows 11 (PowerShell) — paso a paso
+
+Ejecutar desde **PowerShell** en tu PC, con la red Fabric levantada
+(`arrancar-red.ps1`). La imagen del `cli` es `hyperledger/fabric-tools:2.5`, que
+incluye `peer` y `configtxlator`, así que estos comandos funcionan tal cual.
+
+### 0. Verificar que la red corre
+
+```powershell
+docker ps
+```
+
+Deben aparecer: `cli`, `peer0.ficct.edu.bo`, `peer1.ficct.edu.bo`,
+`orderer.ficct.edu.bo`, `ca.ficct.edu.bo`, `couchdb0`, `couchdb1`.
+
+### 1. Altura de la cadena (número de bloques)
+
+```powershell
+docker exec cli peer channel getinfo -c evoting
+```
+
+Devuelve `{"height":N,...}`. Vota desde la app y vuelve a correrlo: **N sube**.
+
+### 2. Conteo de votos leído del ledger
+
+En PowerShell las comillas dobles internas se escapan con `\"`:
+
+```powershell
+docker exec cli peer chaincode query -C evoting -n evoting-cc -c '{\"function\":\"FicctVoting:getResultados\",\"Args\":[\"8c9348b6-0463-4a86-823f-21fc13d8c91c\"]}'
+```
+
+El resultado debe coincidir con lo que muestra la app.
+
+### 3. Verificar un voto concreto por su txId
+
+Toma un txId de la tabla de auditoría o del comprobante de un votante:
+
+```powershell
+docker exec cli peer chaincode query -C evoting -n evoting-cc -c '{\"function\":\"FicctVoting:verificarVoto\",\"Args\":[\"PEGA_AQUI_EL_TXID\"]}'
+```
+
+### 4. Descargar el último bloque y leerlo
+
+```powershell
+docker exec cli peer channel fetch newest /tmp/ultimo.block -c evoting
+docker exec cli configtxlator proto_decode --type common.Block --input /tmp/ultimo.block
+```
+
+El segundo comando imprime el bloque en JSON: verás su número, el hash del
+bloque anterior (`previous_hash`) y las transacciones que contiene. Esa es la
+prueba cruda de que el voto vive en un bloque encadenado.
+
+### Notas para Windows
+
+- Si un comando con comillas da error de sintaxis, prueba a envolver todo el
+  `-c '...'` en comillas simples (como arriba) y escapar solo las dobles
+  internas con `\"`.
+- Alternativa sin escapes: abre una shell dentro del cli y ahí usa comillas
+  normales:
+  ```powershell
+  docker exec -it cli bash
+  # ya dentro del contenedor (comillas normales de Linux):
+  peer channel getinfo -c evoting
+  peer chaincode query -C evoting -n evoting-cc -c '{"function":"FicctVoting:getResultados","Args":["8c9348b6-0463-4a86-823f-21fc13d8c91c"]}'
+  exit
+  ```
+- Docker Desktop debe estar corriendo (el icono de la ballena activo).
