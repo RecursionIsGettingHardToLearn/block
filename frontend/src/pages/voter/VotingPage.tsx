@@ -7,6 +7,7 @@ import {
   Ban,
   Users,
   ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 import { useElections } from '../../hooks/useElections';
 import { QRCodeSVG } from 'qrcode.react';
@@ -23,7 +24,12 @@ interface VoteReceipt {
 }
 
 export default function VotingPage() {
-  const { elections, loading, error: electionsError } = useElections();
+  const {
+    elections,
+    loading,
+    error: electionsError,
+    fetchElections,
+  } = useElections();
 
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState(false);
@@ -225,6 +231,16 @@ export default function VotingPage() {
           <p className="text-sm font-bold text-slate-500 uppercase tracking-[0.3em]">
             Tus votos han sido blindados en blockchain
           </p>
+          {/* Puede haber elecciones nuevas en los canales del votante; este
+              botón recarga la lista para poder votar en ellas. */}
+          <button
+            onClick={() => fetchElections()}
+            disabled={loading}
+            className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Buscar nuevas elecciones
+          </button>
         </div>
 
         {/* Receipt Cards */}
@@ -469,6 +485,15 @@ export default function VotingPage() {
           <p className="text-xs text-slate-500 font-bold uppercase tracking-[0.4em]">
             Seleccione una opción por papeleta
           </p>
+          {/* Recargar por si aparecieron elecciones nuevas en sus canales. */}
+          <button
+            onClick={() => fetchElections()}
+            disabled={loading}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Actualizar
+          </button>
         </div>
 
         {/* Election Sections */}
