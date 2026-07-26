@@ -3,7 +3,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { DatabaseService } from '../database/database.service';
-import { AnomalyService, ReporteAnomalias } from './anomaly.service';
+import { AnomalyService, ReporteAnomalias } from '../ai/anomaly.service';
 
 @Controller('audit')
 @UseGuards(JwtAuthGuard, RolesGuard)

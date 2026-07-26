@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AiModule } from './ai/ai.module';
 import { AuditModule } from './audit/audit.module';
 import { CaModule } from './ca/ca.module';
 import { ReportsModule } from './reports/reports.module';
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module';
     FabricModule,
     NodesModule,
     ChannelsModule,
+    AiModule,
     AuditModule,
     CaModule,
     ReportsModule,

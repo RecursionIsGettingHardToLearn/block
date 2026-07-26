@@ -1,11 +1,13 @@
 """
 Entrenamiento del modelo de detección de anomalías en la votación.
 
-Qué hace, en orden:
+Qué hace:
   1. Extrae features desde PostgreSQL (una fila por voto emitido) — usa features.py.
   2. Entrena un Isolation Forest sobre el comportamiento NORMAL.
   3. Valida inyectando anomalías sintéticas y mide la tasa de detección.
-  4. Guarda el modelo + el escalador en disco (ml/modelo/).
+  4. Guarda TODO en un único archivo (ml/modelo/modelo.joblib): modelo, escalador,
+     columnas y metadatos (fecha, nº de votos, tasa de detección). Un solo archivo
+     hace trivial subir/descargar el modelo entrenado.
 
 No necesita datos etiquetados: aprende cómo es un voto normal y marca lo raro.
 
@@ -16,6 +18,7 @@ Uso:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -25,6 +28,10 @@ from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
 from features import COLUMNAS_MODELO, conectar, construir_features
+
+MODELO_DIR = Path(__file__).resolve().parent / "modelo"
+RUTA_MODELO = MODELO_DIR / "modelo.joblib"
+CONTAMINATION = 0.02  # proporción esperada de anomalías; ajústalo a tu criterio
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -54,34 +61,35 @@ def generar_anomalias_sinteticas(n: int = 50) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Entrenamiento
+# Entrenamiento (reutilizable: lo llama el CLI y el microservicio)
 # ─────────────────────────────────────────────────────────────────────────────
-def main() -> None:
-    print("Conectando a la base de datos…")
+def entrenar() -> dict[str, object]:
+    """Entrena el modelo con los datos actuales de la BD, lo valida y lo guarda.
+    Devuelve los metadatos (para mostrarlos en la interfaz). Lanza RuntimeError
+    si no hay votos con qué entrenar."""
     with conectar() as conn:
         datos = construir_features(conn)
 
     if datos.empty:
-        raise SystemExit(
-            "No hay votos en recibos_voto. Corre primero seed_massive.ts / "
+        raise RuntimeError(
+            "No hay votos en recibos_voto. Corre seed_massive.ts / "
             "simulate_votes.ts para tener datos con qué entrenar."
         )
 
     X = datos[COLUMNAS_MODELO].astype(float)
-    print(f"Votos para entrenar: {len(X)}  |  features: {len(COLUMNAS_MODELO)}")
 
     escalador = StandardScaler()
     X_esc = escalador.fit_transform(X)
 
     modelo = IsolationForest(
         n_estimators=200,
-        contamination=0.02,   # ~2% esperado de anomalías; ajústalo a tu criterio
+        contamination=CONTAMINATION,
         random_state=42,
         n_jobs=-1,
     )
     modelo.fit(X_esc)
 
-    # -- Validación -----------------------------------------------------------
+    # -- Validación con anomalías sintéticas ----------------------------------
     anomalias = generar_anomalias_sinteticas()
     pred_anom = modelo.predict(escalador.transform(anomalias))  # -1 = anomalía
     detectadas = int((pred_anom == -1).sum())
@@ -90,19 +98,41 @@ def main() -> None:
     pred_normal = modelo.predict(X_esc)
     falsos_positivos = int((pred_normal == -1).sum())
 
-    print("\n-- Validacion --------------------------------")
-    print(f"Anomalias sinteticas detectadas: {detectadas}/{len(anomalias)} "
-          f"({tasa:.0%})")
-    print(f"Falsos positivos sobre votos reales: {falsos_positivos}/{len(X)} "
-          f"({falsos_positivos/len(X):.1%})")
+    meta: dict[str, object] = {
+        "entrenado": True,
+        "entrenadoEn": datetime.now(timezone.utc).isoformat(),
+        "nVotos": int(len(X)),
+        "tasaDeteccion": round(tasa, 4),
+        "falsosPositivosPct": round(falsos_positivos / len(X), 4),
+        "contamination": CONTAMINATION,
+    }
 
-    # -- Guardado -------------------------------------------------------------
-    salida = Path(__file__).resolve().parent / "modelo"
-    salida.mkdir(exist_ok=True)
-    joblib.dump(modelo, salida / "isolation_forest.joblib")
-    joblib.dump(escalador, salida / "escalador.joblib")
-    (salida / "columnas.txt").write_text("\n".join(COLUMNAS_MODELO), encoding="utf-8")
-    print(f"\nModelo guardado en {salida}/")
+    # -- Guardado: un único bundle con todo -----------------------------------
+    MODELO_DIR.mkdir(exist_ok=True)
+    joblib.dump(
+        {
+            "modelo": modelo,
+            "escalador": escalador,
+            "columnas": COLUMNAS_MODELO,
+            "meta": meta,
+        },
+        RUTA_MODELO,
+    )
+    return meta
+
+
+def main() -> None:
+    print("Conectando a la base de datos y entrenando…")
+    try:
+        meta = entrenar()
+    except RuntimeError as err:
+        raise SystemExit(str(err))
+
+    print("\n-- Validacion --------------------------------")
+    print(f"Votos usados: {meta['nVotos']}")
+    print(f"Anomalias sinteticas detectadas: {float(meta['tasaDeteccion']):.0%}")
+    print(f"Falsos positivos: {float(meta['falsosPositivosPct']):.1%}")
+    print(f"\nModelo guardado en {RUTA_MODELO}")
 
 
 if __name__ == "__main__":

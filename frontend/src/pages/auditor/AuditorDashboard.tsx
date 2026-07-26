@@ -9,8 +9,6 @@ import {
   CheckCircle2,
   XCircle,
   Boxes,
-  AlertTriangle,
-  ShieldAlert,
 } from 'lucide-react';
 import api from '../../api/axios.config';
 import type { TallyResult, Election } from '../../types';
@@ -37,32 +35,11 @@ interface Auditoria {
   };
 }
 
-/** Un voto puntuado por el modelo de detección de anomalías (módulo ml/). */
-interface VotoPuntuado {
-  id: string;
-  idUsuario: string;
-  idEleccion: string;
-  creadoEn: string;
-  direccionIp: string | null;
-  anomalia: boolean;
-  score: number;
-  motivos: string[];
-}
-
-/** Respuesta del backend en /audit/anomalies. */
-interface ReporteAnomalias {
-  total: number;
-  anomalas: number;
-  resultados: VotoPuntuado[];
-}
-
 export default function AuditorDashboard() {
   const { elections } = useElections();
   const [selectedId, setSelectedId] = useState('');
   const [tally, setTally] = useState<TallyResult | null>(null);
   const [auditoria, setAuditoria] = useState<Auditoria | null>(null);
-  const [anomalias, setAnomalias] = useState<ReporteAnomalias | null>(null);
-  const [anomaliasError, setAnomaliasError] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -95,24 +72,6 @@ export default function AuditorDashboard() {
       setAuditoria(null);
     } finally {
       setLoading(false);
-    }
-
-    // La detección de anomalías corre en un microservicio aparte (ML). Se carga
-    // por separado para que, si está caído o el modelo aún no se ha entrenado,
-    // el resto del panel siga funcionando y solo se muestre un aviso.
-    setAnomaliasError('');
-    setAnomalias(null);
-    try {
-      const { data } = await api.get<ReporteAnomalias>('/audit/anomalies', {
-        params: { electionId: selectedId },
-      });
-      setAnomalias(data);
-    } catch (err) {
-      const detalle =
-        (err as { response?: { data?: { message?: string } } }).response?.data
-          ?.message ??
-        'El servicio de detección de anomalías no está disponible.';
-      setAnomaliasError(detalle);
     }
   }
 
@@ -479,140 +438,6 @@ export default function AuditorDashboard() {
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* Detección de anomalías (modelo de ML, microservicio aparte) */}
-      {(anomalias || anomaliasError) && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-100">
-            <ShieldAlert size={18} className="text-indigo-600" />
-            <h3 className="text-sm font-black text-slate-800">
-              Detección de anomalías
-            </h3>
-            {anomalias && (
-              <span className="ml-auto text-xs text-slate-400">
-                {anomalias.total} voto{anomalias.total !== 1 ? 's' : ''}{' '}
-                analizado{anomalias.total !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-
-          <div className="p-6">
-            {anomaliasError ? (
-              <div className="flex items-start gap-3 rounded-xl p-4 bg-amber-50 border border-amber-200">
-                <AlertTriangle
-                  size={20}
-                  className="text-amber-600 shrink-0 mt-0.5"
-                />
-                <div>
-                  <p className="text-sm font-black text-amber-700">
-                    Análisis no disponible
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {anomaliasError}
-                  </p>
-                </div>
-              </div>
-            ) : anomalias && anomalias.anomalas === 0 ? (
-              <div className="flex items-center gap-3 rounded-xl p-4 bg-emerald-50 border border-emerald-200">
-                <CheckCircle2 size={22} className="text-emerald-600" />
-                <div>
-                  <p className="text-sm font-black text-emerald-700">
-                    Sin anomalías detectadas
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    El modelo no marcó ningún voto como atípico en esta
-                    elección.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              anomalias && (
-                <>
-                  <div className="flex items-center gap-3 rounded-xl p-4 mb-4 bg-red-50 border border-red-200">
-                    <AlertTriangle size={22} className="text-red-600" />
-                    <div>
-                      <p className="text-sm font-black text-red-700">
-                        {anomalias.anomalas} voto
-                        {anomalias.anomalas !== 1 ? 's' : ''} marcado
-                        {anomalias.anomalas !== 1 ? 's' : ''} como atípico
-                        {anomalias.anomalas !== 1 ? 's' : ''}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Requieren revisión manual. El modelo señala patrones
-                        inusuales, no fraude confirmado.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm min-w-[640px]">
-                      <thead>
-                        <tr className="bg-slate-50">
-                          {['Usuario', 'IP', 'Fecha', 'Score', 'Motivos'].map(
-                            (h) => (
-                              <th
-                                key={h}
-                                className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap"
-                              >
-                                {h}
-                              </th>
-                            ),
-                          )}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {anomalias.resultados
-                          .filter((v) => v.anomalia)
-                          .map((v) => (
-                            <tr
-                              key={v.id}
-                              className="border-b border-slate-50 last:border-b-0"
-                            >
-                              <td className="px-4 py-2.5">
-                                <code className="text-[11px] font-mono text-slate-600">
-                                  {v.idUsuario.slice(0, 8)}…
-                                </code>
-                              </td>
-                              <td className="px-4 py-2.5 text-xs text-slate-600 whitespace-nowrap">
-                                {v.direccionIp ?? '—'}
-                              </td>
-                              <td className="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">
-                                {new Date(v.creadoEn).toLocaleString('es-BO')}
-                              </td>
-                              <td className="px-4 py-2.5">
-                                <span className="text-xs font-bold text-red-600 tabular-nums">
-                                  {v.score.toFixed(3)}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2.5">
-                                <div className="flex flex-wrap gap-1">
-                                  {v.motivos.length > 0 ? (
-                                    v.motivos.map((m) => (
-                                      <span
-                                        key={m}
-                                        className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200"
-                                      >
-                                        {m}
-                                      </span>
-                                    ))
-                                  ) : (
-                                    <span className="text-[10px] text-slate-400">
-                                      patrón general atípico
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )
-            )}
           </div>
         </div>
       )}

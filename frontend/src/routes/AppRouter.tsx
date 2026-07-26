@@ -12,6 +12,7 @@ import CAPage from '../pages/admin/CAPage';
 import ReportsPage from '../pages/admin/ReportsPage';
 import VotingPage from '../pages/voter/VotingPage';
 import AuditorDashboard from '../pages/auditor/AuditorDashboard';
+import IADashboard from '../pages/ai/IADashboard';
 import VoteValidator from '../pages/auditor/VoteValidator';
 import AdminResults from '../pages/admin/AdminResults';
 import AdminLayout from '../components/layout/AdminLayout';
@@ -68,6 +69,7 @@ export default function AppRouter() {
           <Route path="canales" element={<ChannelsPage />} />
           <Route path="ca" element={<CAPage />} />
           <Route path="reportes" element={<ReportsPage />} />
+          <Route path="ia" element={<IADashboard />} />
         </Route>
 
         {/* ── VOTANTE ───────────────────────────────────────────────────── */}
@@ -101,6 +103,7 @@ export default function AppRouter() {
           <Route path="validar" element={<VoteValidator />} />
           <Route path="blockchain" element={<AuditLogs />} />
           <Route path="reportes" element={<ReportsPage />} />
+          <Route path="ia" element={<IADashboard />} />
         </Route>
 
         {/* URLs antiguas → redirigen al equivalente nuevo */}

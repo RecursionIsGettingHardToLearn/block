@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Lock,
   FileBarChart,
+  Brain,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 
@@ -24,6 +25,7 @@ const adminLinks = [
   { to: '/admin/canales', label: 'Canales', Icon: Layers },
   { to: '/admin/ca', label: 'CA', Icon: Lock },
   { to: '/admin/reportes', label: 'Reportes', Icon: FileBarChart },
+  { to: '/admin/ia', label: 'IA', Icon: Brain },
 ];
 
 const voterLinks = [
@@ -35,6 +37,7 @@ const auditorLinks = [
   { to: '/auditor/resultados', label: 'Resultados', Icon: BarChart },
   { to: '/auditor/validar', label: 'Validar voto', Icon: ShieldCheck },
   { to: '/auditor/reportes', label: 'Reportes', Icon: FileBarChart },
+  { to: '/auditor/ia', label: 'IA', Icon: Brain },
 ];
 
 const rolMeta: Record<
