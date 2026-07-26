@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useElections } from '../../hooks/useElections';
 import { QRCodeSVG } from 'qrcode.react';
+import VoterVerify from './VoterVerify';
 import api from '../../api/axios.config';
 import { useAuthStore } from '../../store/auth.store';
 
@@ -179,6 +180,40 @@ export default function VotingPage() {
   // formateado y lanza el diálogo de impresión del navegador (que permite
   // imprimir en papel o guardar como PDF). No revela por quién se votó: solo
   // acredita que el voto se registró, con su identificador de transacción.
+  // Descarga el QR de una elección como imagen PNG, para guardarlo y poder
+  // verificar el voto más tarde subiéndolo.
+  function descargarQR(electionId: string, titulo: string) {
+    const svg = document.getElementById(`qr-${electionId}`);
+    if (!(svg instanceof SVGElement)) return;
+    const xml = new XMLSerializer().serializeToString(svg);
+    const svg64 = btoa(unescape(encodeURIComponent(xml)));
+    const img = new Image();
+    img.onload = () => {
+      // Lienzo con margen blanco para que el QR se lea bien.
+      const escala = 4; // más nitidez
+      const margen = 16;
+      const canvas = document.createElement('canvas');
+      canvas.width = (img.width + margen * 2) * escala;
+      canvas.height = (img.height + margen * 2) * escala;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(
+        img,
+        margen * escala,
+        margen * escala,
+        img.width * escala,
+        img.height * escala,
+      );
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `comprobante-${titulo.replace(/\s+/g, '_')}.png`;
+      a.click();
+    };
+    img.src = `data:image/svg+xml;base64,${svg64}`;
+  }
+
   function imprimirComprobante() {
     const filas = activeElections
       .filter((e) => receipts[e.id])
@@ -290,6 +325,7 @@ export default function VotingPage() {
                       <div className="mt-4 flex items-center gap-4">
                         <div className="bg-white p-2 rounded-xl border border-slate-200 shrink-0">
                           <QRCodeSVG
+                            id={`qr-${election.id}`}
                             value={results[election.id]}
                             size={96}
                             level="M"
@@ -297,19 +333,29 @@ export default function VotingPage() {
                         </div>
                         <div className="flex flex-col gap-2 min-w-0">
                           <p className="text-[11px] text-slate-500 leading-snug">
-                            Escanea este código para obtener el ID de tu
-                            transacción y verificar tu voto.
+                            Escanea o descarga este código para verificar tu
+                            voto más tarde.
                           </p>
-                          <button
-                            onClick={() =>
-                              navigator.clipboard?.writeText(
-                                results[election.id],
-                              )
-                            }
-                            className="self-start text-[11px] font-bold text-indigo-600 hover:text-indigo-700 cursor-pointer"
-                          >
-                            Copiar ID de transacción
-                          </button>
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              onClick={() =>
+                                descargarQR(election.id, election.title)
+                              }
+                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 cursor-pointer"
+                            >
+                              Descargar QR
+                            </button>
+                            <button
+                              onClick={() =>
+                                navigator.clipboard?.writeText(
+                                  results[election.id],
+                                )
+                              }
+                              className="text-[11px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                            >
+                              Copiar ID
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -335,6 +381,10 @@ export default function VotingPage() {
             </div>
           )}
         </div>
+
+        {/* Autoverificación: el votante confirma su voto por txId o subiendo
+            el QR que descargó. */}
+        <VoterVerify />
 
         <div className="w-full space-y-6">
           {activeElections.map((election) => {
@@ -464,16 +514,21 @@ export default function VotingPage() {
 
   if (activeElections.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-32 gap-6 text-slate-300">
-        <Vote size={72} className="opacity-10" strokeWidth={1} />
-        <div className="text-center">
-          <p className="text-sm font-black uppercase tracking-widest text-slate-400">
-            No hay papeletas activas
-          </p>
-          <p className="text-xs text-slate-500 mt-2">
-            Tu cuenta no está asignada a ningún canal con elección en curso
-          </p>
+      <div className="max-w-xl mx-auto flex flex-col gap-8 py-16 px-4">
+        <div className="flex flex-col items-center gap-4 text-slate-300">
+          <Vote size={64} className="opacity-10" strokeWidth={1} />
+          <div className="text-center">
+            <p className="text-sm font-black uppercase tracking-widest text-slate-400">
+              No hay papeletas activas
+            </p>
+            <p className="text-xs text-slate-500 mt-2">
+              Tu cuenta no está asignada a ningún canal con elección en curso
+            </p>
+          </div>
         </div>
+        {/* Aunque no haya papeletas, el votante puede verificar un voto que ya
+            emitió, con su txId o el QR que descargó. */}
+        <VoterVerify />
       </div>
     );
   }
