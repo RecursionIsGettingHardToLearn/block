@@ -5,6 +5,7 @@ import '../theme.dart';
 import 'login_screen.dart';
 import 'voter/voter_vote_screen.dart';
 import 'voter/voter_receipts_screen.dart';
+import 'voter/voter_qr_scan_screen.dart';
 import 'auditor/auditor_validate_screen.dart';
 import 'auditor/auditor_elections_screen.dart';
 import 'admin/admin_dashboard_screen.dart';
@@ -37,6 +38,7 @@ class _HomeRouterState extends State<HomeRouter> {
         return const [
           _NavItem(VoterVoteScreen(), Icons.how_to_vote, 'Votar'),
           _NavItem(VoterReceiptsScreen(), Icons.receipt_long, 'Comprobantes'),
+          _NavItem(VoterQrScanScreen(), Icons.qr_code_scanner, 'Verificar QR'),
         ];
       case Rol.auditor:
         return const [

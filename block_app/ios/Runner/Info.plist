@@ -66,5 +66,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>La cámara se usa para escanear el código QR de tu comprobante de voto y verificar su autenticidad en la blockchain.</string>
 </dict>
 </plist>
