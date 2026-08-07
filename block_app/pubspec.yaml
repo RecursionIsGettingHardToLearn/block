@@ -43,6 +43,8 @@ dependencies:
   # Notificaciones push (Firebase Cloud Messaging).
   firebase_core: ^3.6.0
   firebase_messaging: ^15.1.3
+  # Muestra la notificación en pantalla cuando la app está en primer plano.
+  flutter_local_notifications: ^18.0.0
 
 dev_dependencies:
   flutter_test:
