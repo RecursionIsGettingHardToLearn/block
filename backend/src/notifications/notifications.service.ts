@@ -118,8 +118,43 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
+   * Envía una notificación de prueba al usuario autenticado. Útil para
+   * verificar que el token, Firebase y el backend están bien configurados
+   * sin necesidad de emitir un voto real.
+   */
+  async notificarPrueba(
+    userId: string,
+    titulo: string,
+    cuerpo: string,
+  ): Promise<{ enviado: boolean; dispositivos: number; motivo?: string }> {
+    if (!this.habilitado) {
+      return {
+        enviado: false,
+        dispositivos: 0,
+        motivo:
+          'Firebase no configurado. Añade FIREBASE_CREDENTIALS_PATH al .env y reinicia.',
+      };
+    }
+    const tokens = await this.tokensDe(userId);
+    if (tokens.length === 0) {
+      return {
+        enviado: false,
+        dispositivos: 0,
+        motivo:
+          'No hay dispositivos registrados para este usuario. Inicia sesión en la app primero.',
+      };
+    }
+    const respuesta = await getMessaging().sendEachForMulticast({
+      tokens,
+      notification: { title: titulo, body: cuerpo },
+      data: { tipo: 'prueba' },
+    });
+    await this.limpiarTokensInvalidos(tokens, respuesta);
+    return { enviado: respuesta.successCount > 0, dispositivos: tokens.length };
+  }
+
+  /**
    * Avisa al votante que su voto quedó registrado en la blockchain. Fire-and-
-   * forget: captura cualquier error internamente y nunca lanza, para no afectar
    * el flujo de emisión del voto.
    */
   async notificarVotoEmitido(
