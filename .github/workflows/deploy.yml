@@ -70,25 +70,25 @@ jobs:
             EXISTING_JWT=$(grep -E "^JWT_SECRET=" backend/.env 2>/dev/null | cut -d= -f2- || true)
             FINAL_JWT="${JWT_SECRET:-$EXISTING_JWT}"
 
-            cat > backend/.env <<ENVEOF
-DB_HOST=${DB_HOST}
-DB_PORT=${DB_PORT}
-DB_USER=${DB_USER}
-DB_PASSWORD=${DB_PASSWORD}
-DB_NAME=${DB_NAME}
-DB_SSL=${DB_SSL}
-JWT_SECRET=${FINAL_JWT}
-JWT_EXPIRES_IN=8h
-PORT=3000
-FRONTEND_URL=https://${VM_HOST}
-FABRIC_PEER_ENDPOINT=localhost:7051
-FABRIC_PEER_HOST_ALIAS=peer0.ficct.edu.bo
-FABRIC_MSP_ID=FICCTOrgMSP
-FABRIC_CHANNEL=evoting
-FABRIC_CHAINCODE=evoting-cc
-FABRIC_CA_URL=https://localhost:7054
-FABRIC_NETWORK_PATH=/opt/block/fabric/network
-ENVEOF
+            printf '%s\n' \
+              "DB_HOST=${DB_HOST}" \
+              "DB_PORT=${DB_PORT}" \
+              "DB_USER=${DB_USER}" \
+              "DB_PASSWORD=${DB_PASSWORD}" \
+              "DB_NAME=${DB_NAME}" \
+              "DB_SSL=${DB_SSL}" \
+              "JWT_SECRET=${FINAL_JWT}" \
+              "JWT_EXPIRES_IN=8h" \
+              "PORT=3000" \
+              "FRONTEND_URL=https://${VM_HOST}" \
+              "FABRIC_PEER_ENDPOINT=localhost:7051" \
+              "FABRIC_PEER_HOST_ALIAS=peer0.ficct.edu.bo" \
+              "FABRIC_MSP_ID=FICCTOrgMSP" \
+              "FABRIC_CHANNEL=evoting" \
+              "FABRIC_CHAINCODE=evoting-cc" \
+              "FABRIC_CA_URL=https://localhost:7054" \
+              "FABRIC_NETWORK_PATH=/opt/block/fabric/network" \
+              > backend/.env
             sudo chmod 600 backend/.env
 
             echo "==> Backend"
