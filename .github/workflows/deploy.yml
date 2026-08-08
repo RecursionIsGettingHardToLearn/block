@@ -26,6 +26,12 @@ jobs:
 
     env:
       VM_HOST: ${{ secrets.VM_HOST }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_SSL: ${{ secrets.DB_SSL }}
 
     steps:
       # Mientras no exista la maquina virtual, el despliegue se OMITE en lugar
@@ -50,7 +56,7 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           # La red Fabric puede tardar en responder; no cortar antes de tiempo.
           command_timeout: 20m
-          envs: DB_HOST,DB_PORT,DB_USER,DB_PASSWORD,DB_NAME,DB_SSL,JWT_SECRET,OPENAI_API_KEY
+          envs: VM_HOST,DB_HOST,DB_PORT,DB_USER,DB_PASSWORD,DB_NAME,DB_SSL
           script: |
             set -euo pipefail
             cd /opt/block
@@ -64,28 +70,25 @@ jobs:
             EXISTING_JWT=$(grep -E "^JWT_SECRET=" backend/.env 2>/dev/null | cut -d= -f2- || true)
             FINAL_JWT="${JWT_SECRET:-$EXISTING_JWT}"
 
-            sudo tee backend/.env > /dev/null << EOF
-            DB_HOST=${DB_HOST}
-            DB_PORT=${DB_PORT}
-            DB_USER=${DB_USER}
-            DB_PASSWORD=${DB_PASSWORD}
-            DB_NAME=${DB_NAME}
-            DB_SSL=${DB_SSL}
-
-            JWT_SECRET=${FINAL_JWT}
-            JWT_EXPIRES_IN=8h
-
-            PORT=3000
-            FRONTEND_URL=https://${{ secrets.VM_HOST }}
-
-            FABRIC_PEER_ENDPOINT=localhost:7051
-            FABRIC_PEER_HOST_ALIAS=peer0.ficct.edu.bo
-            FABRIC_MSP_ID=FICCTOrgMSP
-            FABRIC_CHANNEL=evoting
-            FABRIC_CHAINCODE=evoting-cc
-            FABRIC_CA_URL=https://localhost:7054
-            FABRIC_NETWORK_PATH=/opt/block/fabric/network
-            EOF
+            cat > backend/.env <<ENVEOF
+DB_HOST=${DB_HOST}
+DB_PORT=${DB_PORT}
+DB_USER=${DB_USER}
+DB_PASSWORD=${DB_PASSWORD}
+DB_NAME=${DB_NAME}
+DB_SSL=${DB_SSL}
+JWT_SECRET=${FINAL_JWT}
+JWT_EXPIRES_IN=8h
+PORT=3000
+FRONTEND_URL=https://${VM_HOST}
+FABRIC_PEER_ENDPOINT=localhost:7051
+FABRIC_PEER_HOST_ALIAS=peer0.ficct.edu.bo
+FABRIC_MSP_ID=FICCTOrgMSP
+FABRIC_CHANNEL=evoting
+FABRIC_CHAINCODE=evoting-cc
+FABRIC_CA_URL=https://localhost:7054
+FABRIC_NETWORK_PATH=/opt/block/fabric/network
+ENVEOF
             sudo chmod 600 backend/.env
 
             echo "==> Backend"
